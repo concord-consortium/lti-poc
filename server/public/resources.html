@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>LTI Deep Linking Resource Picker</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 2em;
+    }
+    label, select, button {
+      display: block;
+      margin-bottom: 1em;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Select a Resource</h1>
+
+  <label for="resourceSelect">Available Resources:</label>
+  <select id="resourceSelect">
+    <!-- Options will be populated via JavaScript -->
+  </select>
+
+  <button id="selectBtn">Select</button>
+
+  <script>
+    // Helper: parse query parameters
+    function getQueryParam(name) {
+      const params = new URLSearchParams(window.location.search);
+      return params.get(name);
+    }
+
+    const ltik = getQueryParam("ltik");
+    if (!ltik) {
+      alert("Missing required ltik query parameter.");
+      throw new Error("ltik parameter is required.");
+    }
+
+    // Simplified resource list with slug
+    const resources = [
+      {
+        title: "Intro to Chemistry Simulation",
+        slug: "chemistry"
+      },
+      {
+        title: "Physics Gravity Lab",
+        slug: "gravity"
+      },
+      {
+        title: "Biology Cell Explorer",
+        slug: "cell"
+      }
+    ];
+
+    const selectEl = document.getElementById('resourceSelect');
+
+    // Populate the dropdown
+    resources.forEach((resource, index) => {
+      const option = document.createElement('option');
+      option.value = index;
+      option.textContent = resource.title;
+      selectEl.appendChild(option);
+    });
+
+    // Handle button click
+    document.getElementById('selectBtn').addEventListener('click', () => {
+      const selectedIndex = selectEl.value;
+      const basePath = "/resources/";
+      const selected = resources[selectedIndex];
+
+      if (!selected) {
+        alert("Please select a valid resource.");
+        return;
+      }
+
+      // Construct the full resource payload using the slug
+      const resourcePayload = {
+        title: selected.title,
+        url: "/launch",
+        slug: selected.slug,
+        ltik: ltik
+      };
+
+      fetch('/deeplink', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(resourcePayload)
+      })
+      .then(response => response.text())
+      .then(html => {
+        document.open();
+        document.write(html);
+        document.close();
+      })
+      .catch(err => {
+        console.error("Error during deeplink POST:", err);
+        alert("There was an error selecting the resource.");
+      });
+    });
+  </script>
+
+</body>
+</html>
