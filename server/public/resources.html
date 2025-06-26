@@ -41,17 +41,17 @@
     // Simplified resource list with slug
     const resources = [
       {
-        title: "Intro to Chemistry Simulation",
-        slug: "chemistry"
+        title: "Token Debugger",
+        slug: "token-debugger"
       },
       {
-        title: "Physics Gravity Lab",
-        slug: "gravity"
+        title: "Names and Roles Demo",
+        slug: "names-and-roles-demo"
       },
       {
-        title: "Biology Cell Explorer",
-        slug: "cell"
-      }
+        title: "AP Launch Demo",
+        slug: "ap-launch-demo"
+      },
     ];
 
     const selectEl = document.getElementById('resourceSelect');
@@ -67,7 +67,6 @@
     // Handle button click
     document.getElementById('selectBtn').addEventListener('click', () => {
       const selectedIndex = selectEl.value;
-      const basePath = "/resources/";
       const selected = resources[selectedIndex];
 
       if (!selected) {
