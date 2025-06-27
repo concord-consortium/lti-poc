@@ -1,13 +1,13 @@
 import path from 'path'
 import * as jwt from 'jsonwebtoken'
-import { computeClassHash, computeUidHash, ensureTrailingSlash, getUserId, getUserInfo, getUserType } from './helpers'
+import { computeClassHash, computeUidHash, ensureTrailingSlash, getTeacherPage, getUserId, getUserInfo, getUserType } from './helpers'
+import fs from 'fs'
 
 // the ltijs types are old and not compatible with the latest version of ltijs
 // import {Provider as lti} from 'ltijs'
 
 const lti = require('ltijs').Provider
 const Database = require('ltijs-sequelize')
-import fs from 'fs'
 
 let localTunnelUrl = process.env.LOCAL_TUNNEL_URL
 if (!localTunnelUrl) {
@@ -59,7 +59,7 @@ lti.setup('LTIKEY', // Key used to sign cookies and tokens
     dynReg: {
       url: localTunnelUrl, // Tool Provider URL. Required field.
       name: 'LTI POC', // Tool Provider name. Required field.
-      logo: 'http://tool.example.com/assets/logo.svg', // Tool Provider logo URL.
+      logo: "https://cc-project-resources.s3.us-east-1.amazonaws.com/lti-poc-logo/cc-logo-small.svg", // Tool Provider logo URL.
       description: 'LTI Proof-of-concept', // Tool Provider description.
       redirectUris: [], // Additional redirection URLs. The main URL is added by default.
       customParameters: { key: 'value' }, // Custom parameters.
@@ -108,33 +108,58 @@ lti.onConnect(async (token, req, res) => {
   switch (token.platformContext?.custom?.slug) {
     case "token-debugger":
       return debug(token)
+
     case "names-and-roles-demo":
       const response = await lti.NamesAndRoles.getMembers(token)
       return debug(response)
+
     case "ap-launch-demo":
       // reencode the token to a JWT that we can verify the signature of
       const localJWT = jwt.sign(token, localJWTSecret, {algorithm: localJWTAlg})
 
-      /* TODO
-        x create a JWT of the token object (the passed req.token does not have the required fields)
-        x use the JWT to launch the Activity Player
-        - add the portal JWT api endpoint
-        - add the firebase JWT api endpoint
-        - add the class info api endpoint using lti.NamesAndRoles.getMembers(token)
-        - add the offering info api endpoint
-        - fork ltijs and change when middleware is called
-      */
-
-      const apParams = new URLSearchParams({
-        activity: "https://authoring.lara.staging.concord.org/api/v1/activities/1173.json",
+      const rawAPParams = {
+        activity: "https://authoring.lara.staging.concord.org/api/v1/activities/1416.json",
         domain: `${localTunnelUrl}/`,
         token: localJWT,
         answersSourceKey: new URL(token.iss).hostname, // this is the platform URL
-      });
+      }
       // const apUrl = new URL("https://activity-player.concord.org/branch/master/");
       const apUrl = new URL("http://localhost:8080/");
-      apUrl.search = apParams.toString();
-      return res.redirect(apUrl.toString());
+      apUrl.search = new URLSearchParams(rawAPParams).toString();
+
+      switch (getUserType(token, {treatAdministratorAsLearner: true})) {
+        case "learner":
+          return res.redirect(apUrl.toString());
+          break;
+
+        case "teacher":
+          const teacherEditionParams = new URLSearchParams({...rawAPParams,
+            mode: "teacher-edition",
+            show_index: "true",
+          })
+          const teUrl = new URL(apUrl);
+          teUrl.search = teacherEditionParams.toString();
+
+          return res.status(200).send(getTeacherPage({apUrl: apUrl.toString(), teUrl: teUrl.toString()}));
+          break
+
+        default:
+          return res.status(403).send("This tool is only available for learners and teachers.");
+      }
+      /*
+        teacher notes:
+
+        - the portal offering api response has a has_teacher_edition boolean and reports that look like this:
+          "external_reports": [{
+            "id": 1,
+            "name": "Activity Player Class Dashboard",
+            "url": "https://learn.portal.staging.concord.org/portal/offerings/1167/external_report/1",
+            "launch_text": "Class Dashboard",
+            "supports_researchers": true
+          }]
+
+      */
+
     default:
       return res.send("Unknown slug!")
   }
@@ -200,7 +225,7 @@ lti.app.get('/api/v1/jwt/portal', (req, res) => {
       return res.status(401).send({ status: 401, error: 'Unauthorized', details: { message: 'Invalid token.' } });
     }
 
-    const userType = getUserType(decodedToken);
+    const userType = getUserType(decodedToken, {treatAdministratorAsLearner: true});
     let claims: Record<string, any> = {
       uid: decodedToken.user,
       domain: `${localTunnelUrl}/`,
@@ -318,7 +343,7 @@ lti.app.get('/api/v1/jwt/firebase', async (req, res) => {
 
   const classHash = computeClassHash(ltiToken.platformContext.contextId);
 
-  switch (getUserType(ltiToken)) {
+  switch (getUserType(ltiToken, {treatAdministratorAsLearner: true})) {
     case 'learner':
       subClaims.user_type = 'learner';
       subClaims.class_hash = classHash;
@@ -358,8 +383,6 @@ lti.app.get('/api/v1/jwt/firebase', async (req, res) => {
 
   return res.status(200).send({token: firebaseToken});
 });
-
-// /api/v1/jwt/firebase?firebase_app=report-service-dev&class_hash=4a6e5a36078a499c331d4daf4274c50d63c016113bf71c2d
 
 const setup = async () => {
   await lti.deploy({ port: 3000 })
