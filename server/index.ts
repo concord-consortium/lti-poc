@@ -2,6 +2,7 @@ import path from 'path'
 import * as jwt from 'jsonwebtoken'
 import { computeClassHash, computeUidHash, ensureTrailingSlash, getTeacherPage, getUserId, getUserInfo, getUserType } from './helpers'
 import fs from 'fs'
+import 'dotenv/config'
 
 // the ltijs types are old and not compatible with the latest version of ltijs
 // import {Provider as lti} from 'ltijs'
@@ -9,14 +10,26 @@ import fs from 'fs'
 const lti = require('ltijs').Provider
 const Database = require('ltijs-sequelize')
 
-let localTunnelUrl = process.env.LOCAL_TUNNEL_URL
-if (!localTunnelUrl) {
-  console.error('LOCAL_TUNNEL_URL environment variable is not set. Run localtunnel to expose this server to the internet.')
-  process.exit(1)
+const requiredEnvVars = ['PUBLIC_URL', 'DB_NAME', 'DB_USERNAME', 'DB_PASSWORD', 'DB_HOST', 'DB_PORT', 'LOCAL_JWT_SECRET', 'LTI_KEY', 'AP_BASE_URL']
+const missingEnvVars = requiredEnvVars.filter(varName => !process.env[varName]);
+if (missingEnvVars.length > 0) {
+  console.error(`Missing required environment variables: ${missingEnvVars.join(', ')}`);
+  process.exit(1);
 }
-if (localTunnelUrl.endsWith('/')) {
-  localTunnelUrl = localTunnelUrl.slice(0, -1)
+
+let publicUrl = process.env.PUBLIC_URL!
+if (publicUrl.endsWith('/')) {
+  publicUrl = publicUrl.slice(0, -1)
 }
+
+const dbName = process.env.DB_NAME!
+const dbUsername = process.env.DB_USERNAME!
+const dbPassword = process.env.DB_PASSWORD!
+const dbHost = process.env.DB_HOST!
+const dbPort = process.env.DB_PORT!
+const localJWTSecret = process.env.LOCAL_JWT_SECRET!
+const ltiKey = process.env.LTI_KEY!
+const apBaseUrl = process.env.AP_BASE_URL!
 
 let firebaseAppConfig: {clientEmail: string, privateKey: string}
 try {
@@ -33,17 +46,16 @@ try {
   throw new Error(`Failed to load or parse report-service-dev.json: ${err.message}`)
 }
 
-const localJWTSecret = 'FAKESECRETFAKESECRETFAKESECRETFAKESECRETFAKESECRETFAKESECRETFAKESECRETFAKESECRET'
 const localJWTAlg = 'HS256'
 
-const db = new Database('devdb', 'devuser', 'devpass', {
-  host: 'localhost',
-  port: 33306,
+const db = new Database(dbName, dbUsername, dbPassword, {
+  host: dbHost,
+  port: dbPort,
   dialect: 'mysql',
   logging: false
 })
 
-lti.setup('LTIKEY', // Key used to sign cookies and tokens
+lti.setup(ltiKey, // Key used to sign cookies and tokens
   {
     plugin: db
   },
@@ -57,7 +69,7 @@ lti.setup('LTIKEY', // Key used to sign cookies and tokens
     devMode: true,
     dynRegRoute: '/register', // Setting up dynamic registration route. Defaults to '/register'
     dynReg: {
-      url: localTunnelUrl, // Tool Provider URL. Required field.
+      url: publicUrl, // Tool Provider URL. Required field.
       name: 'LTI POC', // Tool Provider name. Required field.
       logo: "https://cc-project-resources.s3.us-east-1.amazonaws.com/lti-poc-logo/cc-logo-small.svg", // Tool Provider logo URL.
       description: 'LTI Proof-of-concept', // Tool Provider description.
@@ -119,12 +131,11 @@ lti.onConnect(async (token, req, res) => {
 
       const rawAPParams = {
         activity: "https://authoring.lara.staging.concord.org/api/v1/activities/1416.json",
-        domain: `${localTunnelUrl}/`,
+        domain: `${publicUrl}/`,
         token: localJWT,
         answersSourceKey: new URL(token.iss).hostname, // this is the platform URL
       }
-      // const apUrl = new URL("https://activity-player.concord.org/branch/master/");
-      const apUrl = new URL("http://localhost:8080/");
+      const apUrl = new URL(apBaseUrl);
       apUrl.search = new URLSearchParams(rawAPParams).toString();
 
       switch (getUserType(token, {treatAdministratorAsLearner: true})) {
@@ -200,7 +211,7 @@ lti.app.post('/deeplink', async (req, res) => {
     {
       type: 'ltiResourceLink',
       title: resource.title,
-      url: `${localTunnelUrl}/launch`,
+      url: `${publicUrl}/launch`,
       custom: {
         slug: resource.slug
       }
@@ -228,7 +239,7 @@ lti.app.get('/api/v1/jwt/portal', (req, res) => {
     const userType = getUserType(decodedToken, {treatAdministratorAsLearner: true});
     let claims: Record<string, any> = {
       uid: decodedToken.user,
-      domain: `${localTunnelUrl}/`,
+      domain: `${publicUrl}/`,
       user_type: userType,
       user_id: getUserId(decodedToken),
     };
@@ -236,7 +247,7 @@ lti.app.get('/api/v1/jwt/portal', (req, res) => {
       case "learner":
         claims = {...claims, ...{
           learner_id: "n/a",
-          class_info_url: `${localTunnelUrl}/api/v1/classes/${decodedToken.platformContext?.context?.id ?? 0}`,
+          class_info_url: `${publicUrl}/api/v1/classes/${decodedToken.platformContext?.context?.id ?? 0}`,
           offering_id: decodedToken.platformContext?.resource?.id ?? "n/a",
         }}
         break;
