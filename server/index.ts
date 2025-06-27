@@ -82,6 +82,7 @@ lti.setup(ltiKey, // Key used to sign cookies and tokens
 
 lti.whitelist(
   "/",
+  "/robots.txt",
   '/api/v1/jwt/portal',
   '/api/v1/jwt/firebase',
   {route: new RegExp('/api/v1/classes/\\d+'), method: "GET"},
@@ -393,6 +394,11 @@ lti.app.get('/api/v1/jwt/firebase', async (req, res) => {
   })
 
   return res.status(200).send({token: firebaseToken});
+});
+
+lti.app.get('/robots.txt', (req, res) => {
+  res.type('text/plain');
+  res.sendFile(path.join(__dirname, './public/robots.txt'));
 });
 
 const setup = async () => {
