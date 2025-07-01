@@ -55,6 +55,32 @@ const db = new Database(dbName, dbUsername, dbPassword, {
   logging: false
 })
 
+const middleware = (app) => {
+  app.use((req, res, next) => {
+    // check if the request is for an API endpoint that requires a portal token
+    // we do not check the portal token for the /api/v1/jwt/portal
+    // endpoint, as this is used to generate the portal token itself
+    const checkPortalToken = req.path.startsWith("/api/") && req.path !== "/api/v1/jwt/portal"
+    if (checkPortalToken) {
+      // authenticate the request using the locally generated portal token
+      const portalToken = req.headers.authorization?.split(' ')[1];
+      if (!portalToken) {
+        return res.status(401).send({ status: 401, error: 'Unauthorized', details: { message: 'Missing portal token.' } });
+      }
+      jwt.verify(portalToken, localJWTSecret, (err, decodedPortalToken) => {
+        if (err) {
+          return res.status(401).send({ status: 401, error: 'Unauthorized', details: { message: 'Invalid portal token.' } });
+        }
+        res.locals.portalToken = decodedPortalToken;
+        // continue to the next middleware
+        return next();
+      });
+    } else {
+      return next();
+    }
+  });
+}
+
 lti.setup(ltiKey, // Key used to sign cookies and tokens
   {
     plugin: db
@@ -77,41 +103,18 @@ lti.setup(ltiKey, // Key used to sign cookies and tokens
       customParameters: { key: 'value' }, // Custom parameters.
       autoActivate: true // Whether or not dynamically registered Platforms should be automatically activated. Defaults to false.
     },
+    staticPath: path.join(__dirname, 'public'),
+    serverAddon: middleware // Setting addon method
   }
 )
 
 lti.whitelist(
   "/",
-  "/robots.txt",
   '/api/v1/jwt/portal',
   '/api/v1/jwt/firebase',
   {route: new RegExp('/api/v1/classes/\\d+'), method: "GET"},
   {route: new RegExp('/api/v1/offerings/\\d+'), method: "GET"},
 )
-
-lti.app.use((req, res, next) => {
-  // check if the request is for an API endpoint that requires a portal token
-  // we do not check the portal token for the /api/v1/jwt/portal
-  // endpoint, as this is used to generate the portal token itself
-  const checkPortalToken = req.path.startsWith("/api/") && req.path !== "/api/v1/jwt/portal"
-  if (checkPortalToken) {
-    // authenticate the request using the locally generated portal token
-    const portalToken = req.headers.authorization?.split(' ')[1];
-    if (!portalToken) {
-      return res.status(401).send({ status: 401, error: 'Unauthorized', details: { message: 'Missing portal token.' } });
-    }
-    jwt.verify(portalToken, localJWTSecret, (err, decodedPortalToken) => {
-      if (err) {
-        return res.status(401).send({ status: 401, error: 'Unauthorized', details: { message: 'Invalid portal token.' } });
-      }
-      res.locals.portalToken = decodedPortalToken;
-      // continue to the next middleware
-      return next();
-    });
-  } else {
-    return next();
-  }
-});
 
 lti.onConnect(async (token, req, res) => {
   const debug = (output: any) => {
@@ -394,11 +397,6 @@ lti.app.get('/api/v1/jwt/firebase', async (req, res) => {
   })
 
   return res.status(200).send({token: firebaseToken});
-});
-
-lti.app.get('/robots.txt', (req, res) => {
-  res.type('text/plain');
-  res.sendFile(path.join(__dirname, './public/robots.txt'));
 });
 
 const setup = async () => {
