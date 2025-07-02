@@ -4,7 +4,7 @@
   "description": "Proof-of-concept explorations for LTI 1.3 integration",
   "main": "index.js",
   "scripts": {
-    "server": "tsx server/index.ts"
+    "start": "tsx server/index.ts"
   },
   "repository": {
     "type": "git",
