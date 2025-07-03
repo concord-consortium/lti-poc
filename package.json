@@ -19,7 +19,7 @@
   "dependencies": {
     "dotenv": "^16.6.0",
     "jsonwebtoken": "^9.0.2",
-    "ltijs": "^5.9.7",
+    "ltijs": "github:Cvmcosta/ltijs#release/v6.0",
     "ltijs-sequelize": "^2.4.4"
   },
   "devDependencies": {
