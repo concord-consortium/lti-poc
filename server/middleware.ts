@@ -43,7 +43,6 @@ export const middleware = (app) => {
   if (logRequests) {
     app.use((req, res, next) => {
       console.log("Logging request:", req.method, req.originalUrl);
-      const logFilePath = path.join('/tmp', logRequestsPath);
       const chunks: any[] = [];
 
       // Capture the original send method
@@ -76,7 +75,7 @@ export const middleware = (app) => {
 
         const fullLog = `${requestLine}${requestBody}---\n${responseBody}\n`;
 
-        fs.appendFile(logFilePath, fullLog, (err) => {
+        fs.appendFile(logRequestsPath, fullLog, (err) => {
           if (err) {
             console.error('Failed to write to log file:', err);
           }
