@@ -1,6 +1,6 @@
 import path from "path"
 
-import { ltiKey, publicUrl } from "./config"
+import { dynamicRegistrationName, ltiKey, publicUrl, registerSchoologyClientIds } from "./config"
 import { db } from "./db"
 import { middleware } from "./middleware"
 import { apLaunchDemo } from "./resources/ap-launch-demo"
@@ -25,7 +25,7 @@ lti.setup(ltiKey,
     dynRegRoute: "/register",
     dynReg: {
       url: publicUrl,
-      name: "LTI POC",
+      name: dynamicRegistrationName,
       logo: "https://cc-project-resources.s3.us-east-1.amazonaws.com/lti-poc-logo/cc-logo-small.svg",
       description: "LTI Proof-of-concept",
       redirectUris: [],
@@ -101,3 +101,20 @@ lti.onUnregisteredPlatform((req, res) => { return res.status(400).send({ status:
 // https://cvmcosta.me/ltijs/#/provider?id=provideroninactiveplatforminactiveplatformcallback
 lti.onInactivePlatform((req, res) => { return res.status(401).send({ status: 401, error: 'Unauthorized', details: { message: 'Platform not active!' } }) })
 */
+
+// any code that should run after the deployment of the LTI server
+export const postDeployment = () => {
+
+  // register any Schoology clients if the environment variable is set
+  const clientIds = registerSchoologyClientIds.split(',').map(id => id.trim()).filter(id => id.length > 0)
+  for (const clientId of clientIds) {
+    lti.registerPlatform({
+      url: 'https://schoology.schoology.com',
+      name: 'Schoology',
+      clientId,
+      authenticationEndpoint: 'https://lti-service.svc.schoology.com/lti-service/authorize-redirect',
+      accesstokenEndpoint: 'https://lti-service.svc.schoology.com/lti-service/access-token',
+      authConfig: { method: 'JWK_SET', key: 'https://lti-service.svc.schoology.com/lti-service/.well-known/jwks' }
+    })
+  }
+}

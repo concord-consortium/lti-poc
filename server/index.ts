@@ -1,4 +1,4 @@
-import { lti } from './lti'
+import { lti, postDeployment } from './lti'
 import { addApiRoutes } from './api'
 import { addPortalApiRoutes } from './portal-api'
 import { getWhitelist } from './whitelist'
@@ -8,7 +8,10 @@ addPortalApiRoutes(lti)
 
 const start = async () => {
   lti.whitelist(...getWhitelist())
+
   await lti.deploy({ port: 3000 })
+
+  postDeployment()
 }
 
 start()

@@ -2,7 +2,23 @@ import fs from 'fs'
 import path from "path"
 import 'dotenv/config'
 
-const requiredEnvVars = ['PUBLIC_URL', 'DB_NAME', 'DB_USERNAME', 'DB_PASSWORD', 'DB_HOST', 'DB_PORT', 'LOCAL_JWT_SECRET', 'LTI_KEY', 'AP_BASE_URL']
+const requiredEnvVars = [
+  'PUBLIC_URL',
+  'DB_NAME',
+  'DB_USERNAME',
+  'DB_PASSWORD',
+  'DB_HOST',
+  'DB_PORT',
+  'LOCAL_JWT_SECRET',
+  'LTI_KEY',
+  'AP_BASE_URL',
+]
+const optionalEnvVars = [
+  'LOG_REQUESTS',
+  'LOG_REQUESTS_PATH',
+  'DYNAMIC_REGISTRATION_NAME',
+  'REGISTER_SCHOOLOGY_CLIENT_IDS'
+]
 const missingEnvVars = requiredEnvVars.filter(varName => !process.env[varName])
 if (missingEnvVars.length > 0) {
   console.error(`Missing required environment variables: ${missingEnvVars.join(', ')}`)
@@ -22,6 +38,11 @@ export const dbPort = process.env.DB_PORT!
 export const localJWTSecret = process.env.LOCAL_JWT_SECRET!
 export const ltiKey = process.env.LTI_KEY!
 export const apBaseUrl = process.env.AP_BASE_URL!
+
+export const logRequests = process.env.LOG_REQUESTS === 'true'
+export const logRequestsPath = process.env.LOG_REQUESTS_PATH || '/tmp/requests.log'
+export const dynamicRegistrationName = process.env.DYNAMIC_REGISTRATION_NAME || 'LTI POC'
+export const registerSchoologyClientIds = process.env.REGISTER_SCHOOLOGY_CLIENT_IDS || ""
 
 export let firebaseAppConfig: {clientEmail: string, privateKey: string}
 try {

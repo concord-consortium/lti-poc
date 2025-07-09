@@ -1,6 +1,8 @@
 import * as jwt from 'jsonwebtoken'
+import fs from "fs"
+import path from "path"
 
-import { localJWTSecret } from "./config"
+import { localJWTSecret, logRequests, logRequestsPath } from "./config"
 
 // ltijs has an setting for a server addon, which is a middleware function that runs before the request is processed
 
@@ -37,4 +39,51 @@ export const middleware = (app) => {
       return next()
     }
   })
+
+  if (logRequests) {
+    app.use((req, res, next) => {
+      console.log("Logging request:", req.method, req.originalUrl);
+      const logFilePath = path.join('/tmp', logRequestsPath);
+      const chunks: any[] = [];
+
+      // Capture the original send method
+      const originalSend = res.send;
+
+      res.send = function (body: any) {
+        // Capture the response body
+        if (body instanceof Buffer) {
+          chunks.push(body);
+        } else if (typeof body === 'string') {
+          chunks.push(Buffer.from(body));
+        } else {
+          chunks.push(Buffer.from(JSON.stringify(body)));
+        }
+
+        // Call the original send method
+        return originalSend.call(this, body);
+      };
+
+      res.on('finish', () => {
+        const requestLine = `${req.method} ${res.statusCode} ${req.originalUrl}\n`;
+
+        const requestBody = req.body && Object.keys(req.body).length > 0
+          ? `${JSON.stringify(req.body, null, 2)}\n`
+          : '[no request body]\n';
+
+        const responseBody = chunks.length
+          ? `${Buffer.concat(chunks).toString()}\n`
+          : '[no response body]\n';
+
+        const fullLog = `${requestLine}${requestBody}---\n${responseBody}\n`;
+
+        fs.appendFile(logFilePath, fullLog, (err) => {
+          if (err) {
+            console.error('Failed to write to log file:', err);
+          }
+        });
+      });
+
+      next();
+    });
+  }
 }
