@@ -108,6 +108,7 @@ export const postDeployment = () => {
   // register any Schoology clients if the environment variable is set
   const clientIds = registerSchoologyClientIds.split(',').map(id => id.trim()).filter(id => id.length > 0)
   for (const clientId of clientIds) {
+    console.log(`Registering Schoology client ID: ${clientId}`)
     lti.registerPlatform({
       url: 'https://schoology.schoology.com',
       name: 'Schoology',
