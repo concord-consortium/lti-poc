@@ -12,21 +12,26 @@
       display: block;
       margin-bottom: 1em;
     }
+    #description {
+      margin-top: -0.5em;
+      margin-bottom: 1.5em;
+      font-style: italic;
+      color: #555;
+    }
   </style>
 </head>
 <body>
 
-  <h1>Select a Resource</h1>
-
-  <label for="resourceSelect">Available Resources:</label>
-  <select id="resourceSelect">
+  <label for="resourceSelect">Available Concord Consortium Resources:</label>
+  <select id="resourceSelect" style="padding: 5px; width: 100%;">
     <!-- Options will be populated via JavaScript -->
   </select>
+
+  <div id="description" style="padding: 10px 0;">Loading resources...</div>
 
   <button id="selectBtn">Select</button>
 
   <script>
-    // Helper: parse query parameters
     function getQueryParam(name) {
       const params = new URLSearchParams(window.location.search);
       return params.get(name);
@@ -38,47 +43,98 @@
       throw new Error("ltik parameter is required.");
     }
 
-    // Simplified resource list with slug
-    const resources = [
-      {
-        title: "Token Debugger",
-        slug: "token-debugger"
-      },
-      {
-        title: "Names and Roles Demo",
-        slug: "names-and-roles-demo"
-      },
-      {
-        title: "AP Launch Demo",
-        slug: "ap-launch-demo"
-      },
-      {
-        title: "Grading Demo",
-        slug: "grading-demo"
-      }
-    ];
-
     const selectEl = document.getElementById('resourceSelect');
+    const descriptionEl = document.getElementById('description');
+    let resources = [];
 
-    // Populate the dropdown
-    resources.forEach((resource, index) => {
-      const option = document.createElement('option');
-      option.value = index;
-      option.textContent = resource.title;
-      selectEl.appendChild(option);
+    function updateDescriptionBySlug(slug) {
+      const resource = resources.find(r => r.slug === slug);
+      if (resource && resource.description) {
+        descriptionEl.textContent = resource.description;
+      } else {
+        descriptionEl.textContent = "No description available.";
+      }
+    }
+
+    function humanizeTag(tag) {
+      return tag
+        .replace(/-/g, " ")
+        .replace("ngss", "NGSS")
+        .replace("dev", "Development")
+        .replace(/\b\w/g, c => c.toUpperCase());
+    };
+
+    // Fetch resources using the ltik param
+    fetch(`/resources?ltik=${encodeURIComponent(ltik)}`)
+      .then(response => {
+        if (!response.ok) throw new Error("Failed to fetch resources.");
+        return response.json();
+      })
+      .then(data => {
+        if (!Array.isArray(data) || data.length === 0) {
+          throw new Error("No resources returned from the server.");
+        }
+
+        resources = data;
+
+        // Map of tag name → array of resources
+        const grouped = {};
+
+        resources.forEach(resource => {
+          resource.tags.forEach(tag => {
+            if (!grouped[tag]) {
+              grouped[tag] = [];
+            }
+            grouped[tag].push(resource);
+          });
+        });
+
+        // Sort tags alphabetically
+        const sortedTagNames = Object.keys(grouped).sort((a, b) => a.localeCompare(b));
+
+        // Clear select in case it's reused
+        selectEl.innerHTML = '';
+
+        // Add optgroups with sorted resources
+        sortedTagNames.forEach(tagName => {
+          const group = document.createElement('optgroup');
+          group.label = humanizeTag(tagName);
+
+          const sortedResources = grouped[tagName].sort((a, b) =>
+            a.title.localeCompare(b.title)
+          );
+
+          sortedResources.forEach(resource => {
+            const option = document.createElement('option');
+            option.value = resource.slug;
+            option.textContent = resource.title;
+            group.appendChild(option);
+          });
+
+          selectEl.appendChild(group);
+        });
+
+        // Set initial description
+        updateDescriptionBySlug(selectEl.value);
+      })
+      .catch(err => {
+        console.error("Error fetching resources:", err);
+        descriptionEl.textContent = "Error loading resource list.";
+      });
+
+    selectEl.addEventListener('change', () => {
+      updateDescriptionBySlug(selectEl.value);
     });
 
-    // Handle button click
     document.getElementById('selectBtn').addEventListener('click', () => {
-      const selectedIndex = selectEl.value;
-      const selected = resources[selectedIndex];
+      const selectedSlug = selectEl.value;
+      const selected = resources.find(r => r.slug === selectedSlug);
 
       if (!selected) {
         alert("Please select a valid resource.");
         return;
       }
 
-      // Construct the full resource payload using the slug
       const resourcePayload = {
         title: selected.title,
         url: "/launch",

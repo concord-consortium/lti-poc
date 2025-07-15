@@ -16,8 +16,7 @@ const requiredEnvVars = [
 const optionalEnvVars = [
   'LOG_REQUESTS',
   'LOG_REQUESTS_PATH',
-  'DYNAMIC_REGISTRATION_NAME',
-  'REGISTER_SCHOOLOGY_CLIENT_IDS'
+  'DYNAMIC_REGISTRATION_NAME'
 ]
 const missingEnvVars = requiredEnvVars.filter(varName => !process.env[varName])
 if (missingEnvVars.length > 0) {
@@ -42,7 +41,6 @@ export const apBaseUrl = process.env.AP_BASE_URL!
 export const logRequests = process.env.LOG_REQUESTS === 'true'
 export const logRequestsPath = process.env.LOG_REQUESTS_PATH || '/tmp/requests.log'
 export const dynamicRegistrationName = process.env.DYNAMIC_REGISTRATION_NAME || 'LTI POC'
-export const registerSchoologyClientIds = process.env.REGISTER_SCHOOLOGY_CLIENT_IDS || ""
 
 export let firebaseAppConfig: {clientEmail: string, privateKey: string}
 try {
