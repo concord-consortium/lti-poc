@@ -1,8 +1,9 @@
 import * as jwt from 'jsonwebtoken'
 
-import { localJWTSecret, publicUrl, localJWTAlg, firebaseAppConfig } from "./config";
+import { localJWTSecret, publicUrl, localJWTAlg, reportServiceDevConfig, reportServiceProConfig, tokenServiceConfig, apBaseUrl } from "./config";
 import { getUserType, getUserId, getUserInfo, computeClassHash, ensureTrailingSlash, computeUidHash } from "./helpers";
 import { addToWhitelist } from './whitelist';
+import { findResource } from './catalog/resources';
 
 // these are routes that our LTI tool exposes to fake being a portal (eg learn.concord.org) so that it can return
 // class and offering information and hand out portal and firebase JWTs
@@ -65,20 +66,54 @@ export const addPortalApiRoutes = (lti: any) => {
     });
   });
 
+  const getOfferingInfo = (token: any) => {
+    const {resource, custom} = token.platformContext;
+
+    let activityUrl = `${ensureTrailingSlash(token.iss)}${resource.id}`
+    if (custom?.slug) {
+      const resourceInfo = findResource(custom.slug);
+      if (resourceInfo && resourceInfo.tool !== "internal") {
+        const rawAPParams: any = {};
+        if (resourceInfo.tool.activity) {
+          rawAPParams.activity = resourceInfo.tool.activity;
+        } else if (resourceInfo.tool.sequence) {
+          rawAPParams.sequence = resourceInfo.tool.sequence;
+        }
+        const apUrl = new URL(apBaseUrl);
+        apUrl.search = new URLSearchParams(rawAPParams).toString();
+
+        activityUrl = apUrl.toString();
+      }
+    }
+
+    const offeringInfo: any = {
+      id: resource.id,
+      activity_url: activityUrl,
+      rubric_url: null, // TODO: figure out if this is available in LTI
+      locked: false, // TODO: figure out if this is available in LTI
+    }
+
+    return offeringInfo;
+  }
+
   lti.app.get('/api/v1/classes/:id', async (req, res) => {
     // NOTE: we ignore the id here, we use the getMembers method to get the class info
     // which uses the class information in the LTI token
-    const {ltiToken} = res.locals.portalToken;
+    const token = res.locals.portalToken.ltiToken || res.locals.portalToken;
+    // const {ltiToken} = res.locals.portalToken;
 
     const classInfo: any = {
-      name: ltiToken.platformContext.context.title,
-      class_hash: computeClassHash(ltiToken.platformContext.contextId),
+      id: token.platformContext.context.id,
+      platformUserId: "TODO",
+      name: token.platformContext.context.title,
+      class_hash: computeClassHash(token.platformContext.context.id),
       students: [],
       teachers: [],
       external_class_reports: [],
+      offering: getOfferingInfo(token),
     }
 
-    const response = await lti.NamesAndRoles.getMembers(ltiToken)
+    const response = await lti.NamesAndRoles.getMembers(token)
     const members = response.members || [];
     members.forEach(member => {
       // check status for active?
@@ -87,7 +122,8 @@ export const addPortalApiRoutes = (lti: any) => {
       // }
 
       const user = {
-        id: `${ensureTrailingSlash(ltiToken.iss)}${member.user_id}`,
+        id: `${ensureTrailingSlash(token.iss)}${member.user_id}`,
+        user_id: member.user_id,
         first_name: member.given_name || '',
         last_name: member.family_name || '',
       }
@@ -103,15 +139,14 @@ export const addPortalApiRoutes = (lti: any) => {
   });
 
   lti.app.get('/api/v1/offerings/:id', async (req, res) => {
-    // NOTE: we ignore the id here and instead use the values in the LTI token
-    const {ltiToken} = res.locals.portalToken;
-    const {resource} = ltiToken.platformContext;
+    // the token here can either be a LTI token or a portal token depending if AP or the dashboard is calling this endpoint
+    const token = res.locals.portalToken.ltiToken || res.locals.portalToken;
 
-    const offeringInfo: any = {
-      id: resource.id,
-      activity_url: `${ensureTrailingSlash(ltiToken.iss)}${resource.id}`,
-      rubric_url: null, // TODO: figure out if this is available in LTI
-      locked: false, // TODO: figure out if this is available in LTI
+    const offeringInfo = getOfferingInfo(token);
+
+    if (req.query?.class_id) {
+      // if class_id is provided, we return as an array of offerings
+      return res.status(200).send([offeringInfo]);
     }
 
     return res.status(200).send(offeringInfo);
@@ -127,37 +162,43 @@ export const addPortalApiRoutes = (lti: any) => {
       });
     }
 
-    if (firebase_app !== 'report-service-dev') {
+    if (!["report-service-dev", "report-service-pro", "token-service"].includes(firebase_app)) {
       return res.status(400).send({
         status: 400,
         error: 'Bad Request',
-        details: { message: 'Invalid firebase_app. Only "report-service-dev" is supported.' }
+        details: { message: 'Invalid firebase_app. Only "report-service-dev", "report-service-pro", and "token-service" are supported.' }
       });
     }
+    const firebaseConfig =
+      firebase_app === 'report-service-dev' ? reportServiceDevConfig :
+      firebase_app === 'report-service-pro' ? reportServiceProConfig :
+      tokenServiceConfig;
 
-    const { ltiToken } = res.locals.portalToken;
-    const userId = getUserId(ltiToken);
+    // the token here can either be a LTI token or a portal token depending if AP or the dashboard is calling this endpoint
+    const token = res.locals.portalToken.ltiToken || res.locals.portalToken;
+    // const { ltiToken } = res.locals.portalToken;
+    const userId = getUserId(token);
 
     const subClaims: any = {
-      platform_id: ltiToken.iss,
-      platform_user_id: ltiToken.user,
+      platform_id: token.iss,
+      platform_user_id: token.user,
       user_id: userId,
     }
 
-    const classHash = computeClassHash(ltiToken.platformContext.contextId);
+    const classHash = computeClassHash(token.platformContext.context.id);
 
-    switch (getUserType(ltiToken, {treatAdministratorAsLearner: true})) {
+    switch (getUserType(token, {treatAdministratorAsLearner: true})) {
       case 'learner':
         subClaims.user_type = 'learner';
         subClaims.class_hash = classHash;
-        subClaims.offering_id = ltiToken.platformContext?.resource?.id ?? 'n/a';
+        subClaims.offering_id = token.platformContext?.resource?.id ?? 'n/a';
         break;
       case 'teacher':
         subClaims.user_type = 'teacher';
         subClaims.class_hash = classHash;
         break;
       default:
-        const { given_name, family_name } = getUserInfo(ltiToken);
+        const { given_name, family_name } = getUserInfo(token);
         subClaims.user_type = 'user';
         break;
     }
@@ -166,8 +207,8 @@ export const addPortalApiRoutes = (lti: any) => {
     // it does not handle researchers or the teacher having a class_hash or resource_link_id parameters
 
     // on the portal the returnUrl is the remote_endpoint_url - we build a similar unique url here
-    const {user, context: { id: contextId }, resource: { id: resourceId }} = ltiToken.platformContext;
-    const returnUrl = `${ltiToken.iss}/${user}-${contextId}-${resourceId}`;
+    const {user, context: { id: contextId }, resource: { id: resourceId }} = token.platformContext;
+    const returnUrl = `${token.iss}/${user}-${contextId}-${resourceId}`;
 
     const response: any = {
       // Firebase auth rules expect all the claims to be in a sub-object named "claims".
@@ -176,10 +217,10 @@ export const addPortalApiRoutes = (lti: any) => {
       returnUrl
     }
 
-    const firebaseToken = jwt.sign(response, firebaseAppConfig.privateKey, {
+    const firebaseToken = jwt.sign(response, firebaseConfig.privateKey, {
       algorithm: 'RS256',
-      issuer: firebaseAppConfig.clientEmail,
-      subject: firebaseAppConfig.clientEmail,
+      issuer: firebaseConfig.clientEmail,
+      subject: firebaseConfig.clientEmail,
       audience: 'https://identitytoolkit.googleapis.com/google.identity.identitytoolkit.v1.IdentityToolkit',
       expiresIn: "1h",
     })

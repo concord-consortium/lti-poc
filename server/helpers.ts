@@ -53,7 +53,7 @@ export const computeUidHash = (s: string) => {
   return createHash("sha256").update(s).digest("hex").slice(0, 32);
 }
 
-export const getTeacherPage = ({apUrl, teUrl}: {apUrl: string, teUrl: string}) => {
+export const getTeacherPage = ({apUrl, teUrl, dashboardUrl}: {apUrl: string, teUrl: string, dashboardUrl: string}) => {
   return `
     <!DOCTYPE html>
     <html lang="en">
@@ -98,7 +98,7 @@ export const getTeacherPage = ({apUrl, teUrl}: {apUrl: string, teUrl: string}) =
           window.location.assign('${teUrl}');
         };
         document.getElementById('dashboard-btn').onclick = function() {
-          alert('The Class Dashboard linking is not implemented yet.');
+          window.location.assign('${dashboardUrl}');
         };
       </script>
     </body>

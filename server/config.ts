@@ -42,20 +42,31 @@ export const logRequests = process.env.LOG_REQUESTS === 'true'
 export const logRequestsPath = process.env.LOG_REQUESTS_PATH || '/tmp/requests.log'
 export const dynamicRegistrationName = process.env.DYNAMIC_REGISTRATION_NAME || 'LTI POC'
 
-export let firebaseAppConfig: {clientEmail: string, privateKey: string}
-try {
-  const configPath = path.join(__dirname, 'firebase-configs', 'report-service-dev.json')
-  const configContent = fs.readFileSync(configPath, 'utf8')
-  firebaseAppConfig = JSON.parse(configContent)
-  if (!firebaseAppConfig.privateKey || typeof firebaseAppConfig.privateKey !== 'string' || !firebaseAppConfig.privateKey.trim()) {
-    throw new Error('Missing or empty "privateKey" in report-service-dev.json')
-  }
-  if (!firebaseAppConfig.clientEmail || typeof firebaseAppConfig.clientEmail !== 'string' || !firebaseAppConfig.clientEmail.trim()) {
-    throw new Error('Missing or empty "clientEmail" in report-service-dev.json')
-  }
-} catch (err) {
-  throw new Error(`Failed to load or parse report-service-dev.json: ${err.message}`)
+export type FirebaseConfig = {
+  clientEmail: string;
+  privateKey: string;
 }
+
+const loadFirebaseConfig = (fileName: string): FirebaseConfig => {
+  const configPath = path.join(__dirname, 'firebase-configs', fileName)
+  try {
+    const configContent = fs.readFileSync(configPath, 'utf8')
+    const firebaseConfig = JSON.parse(configContent)
+    if (!firebaseConfig.privateKey || typeof firebaseConfig.privateKey !== 'string' || !firebaseConfig.privateKey.trim()) {
+      throw new Error(`Missing or empty "privateKey" in ${configPath}`)
+    }
+    if (!firebaseConfig.clientEmail || typeof firebaseConfig.clientEmail !== 'string' || !firebaseConfig.clientEmail.trim()) {
+      throw new Error(`Missing or empty "clientEmail" in ${configPath}`)
+    }
+    return firebaseConfig
+  } catch (err) {
+    throw new Error(`Failed to load or parse ${configPath}: ${err.message}`)
+  }
+}
+
+export const reportServiceDevConfig = loadFirebaseConfig('report-service-dev.json')
+export const reportServiceProConfig = loadFirebaseConfig('report-service-pro.json')
+export const tokenServiceConfig = loadFirebaseConfig('token-service.json')
 
 export const localJWTAlg = 'HS256'
 
