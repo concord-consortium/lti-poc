@@ -1,8 +1,21 @@
+import { clients } from "./catalog/clients"
+import { allResources } from "./catalog/resources"
 import { publicUrl } from "./config"
 
 // these are routes that our LTI tool exposes
 
 export const addApiRoutes = (lti: any) => {
+  lti.app.get('/resources', async (req, res) => {
+    const idToken = res.locals.token
+    const client = clients.find(c => c.id === idToken.clientId)
+    if (!client) {
+      return res.status(404).send({ status: 404, error: 'Not Found', details: { message: 'Client not found.' } })
+    }
+
+    const clientResources = client.tags === "*" ? allResources : allResources.filter(r => r.tags.some(t => client.tags.includes(t)))
+    return res.status(200).send(clientResources);
+  })
+
   lti.app.post('/deeplink', async (req, res) => {
     const resource = req.body
 

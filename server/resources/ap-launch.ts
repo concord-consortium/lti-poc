@@ -2,16 +2,27 @@ import * as jwt from "jsonwebtoken"
 
 import { localJWTSecret, localJWTAlg, publicUrl, apBaseUrl } from "../config";
 import { getUserType, getTeacherPage } from "../helpers";
+import { ApTool } from "../catalog/resources";
 
 export const apLaunchDemo = (res: any, token: any) => {
+  apLaunch(res, token, {type: "ap", activity: "https://authoring.lara.staging.concord.org/api/v1/activities/1416.json"});
+}
+
+export const apLaunch = (res: any, token: any, tool: ApTool) => {
   // reencode the token to a JWT that we can verify the signature of
   const localJWT = jwt.sign(token, localJWTSecret, {algorithm: localJWTAlg})
 
-  const rawAPParams = {
-    activity: "https://authoring.lara.staging.concord.org/api/v1/activities/1416.json",
+  const rawAPParams: any = {
     domain: `${publicUrl}/`,
     token: localJWT,
     answersSourceKey: new URL(token.iss).hostname, // this is the platform URL
+  }
+  if (tool.activity) {
+    rawAPParams.activity = tool.activity;
+  } else if (tool.sequence) {
+    rawAPParams.sequence = tool.sequence;
+  } else {
+    return res.status(400).send({ status: 400, error: 'Bad Request', details: { message: 'Missing required fields: activity or sequence.' } });
   }
   const apUrl = new URL(apBaseUrl);
   apUrl.search = new URLSearchParams(rawAPParams).toString();
