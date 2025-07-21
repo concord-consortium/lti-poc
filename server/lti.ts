@@ -1,10 +1,12 @@
 import path from "path"
 
-import { dynamicRegistrationName, ltiKey, publicUrl, registerSchoologyClientIds } from "./config"
+import { dynamicRegistrationName, ltiKey, publicUrl } from "./config"
 import { db } from "./db"
 import { middleware } from "./middleware"
-import { apLaunchDemo } from "./resources/ap-launch-demo"
+import { apLaunch, apLaunchDemo } from "./resources/ap-launch"
 import { gradingDemo } from "./resources/grading-demo"
+import { findResource } from "./catalog/resources"
+import { clients } from "./catalog/clients"
 
 // the ltijs types are old and not compatible with the latest version of ltijs
 // import {Provider as lti} from 'ltijs'
@@ -45,22 +47,35 @@ lti.onConnect(async (token, req, res) => {
     return res.send(`<div style="white-space: pre-wrap; font-family: monospace;">${JSON.stringify(output, null, 2)}</div>`)
   }
 
-  switch (slug) {
-    case "token-debugger":
-      return debug(token)
-
-    case "names-and-roles-demo":
-      return debug(await lti.NamesAndRoles.getMembers(token))
-
-    case "ap-launch-demo":
-      return apLaunchDemo(res, token)
-
-    case "grading-demo":
-      return gradingDemo(lti, req, res, token)
-
-    default:
-      return res.send(`Unknown resource: ${slug}!`)
+  const resource = findResource(slug)
+  if (!resource) {
+    return res.send(`Unknown resource: ${slug}!`)
   }
+
+  if (resource.tool === "internal") {
+    switch (slug) {
+      case "token-debugger":
+        return debug(token)
+
+      case "names-and-roles-demo":
+        return debug(await lti.NamesAndRoles.getMembers(token))
+
+      case "ap-launch-demo":
+        return apLaunchDemo(res, token)
+
+      case "grading-demo":
+        return gradingDemo(lti, req, res, token)
+
+      default:
+        return res.send(`Unknown internal resource: ${slug}!`)
+    }
+  }
+
+  if (resource.tool.type === "ap") {
+    return apLaunch(res, token, resource.tool)
+  }
+
+  return res.send(`Unknown resource tool: ${resource.tool.type}!`)
 })
 
 lti.onDynamicRegistration(async (req, res, next) => {
@@ -105,8 +120,8 @@ lti.onInactivePlatform((req, res) => { return res.status(401).send({ status: 401
 // any code that should run after the deployment of the LTI server
 export const postDeployment = () => {
 
-  // register any Schoology clients if the environment variable is set
-  const clientIds = registerSchoologyClientIds.split(',').map(id => id.trim()).filter(id => id.length > 0)
+  // register all enabled Schoology clients (they are not automatically registered)
+  const clientIds = clients.filter(c => c.platform === "schoology" && !c.disabled).map(c => c.id)
   for (const clientId of clientIds) {
     console.log(`Registering Schoology client ID: ${clientId}`)
     lti.registerPlatform({
