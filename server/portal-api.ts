@@ -1,9 +1,9 @@
 import * as jwt from 'jsonwebtoken'
 
-import { localJWTSecret, publicUrl, localJWTAlg, reportServiceDevConfig, reportServiceProConfig, tokenServiceConfig, apBaseUrl } from "./config";
+import { localJWTSecret, publicUrl, localJWTAlg, reportServiceDevConfig, reportServiceProConfig, tokenServiceConfig, apBaseUrl, clueBaseUrl } from "./config";
 import { getUserType, getUserId, getUserInfo, computeClassHash, ensureTrailingSlash, computeUidHash } from "./helpers";
 import { addToWhitelist } from './whitelist';
-import { findResource } from './catalog/resources';
+import { ApTool, ClueTool, findResource } from './catalog/resources';
 
 // these are routes that our LTI tool exposes to fake being a portal (eg learn.concord.org) so that it can return
 // class and offering information and hand out portal and firebase JWTs
@@ -72,17 +72,27 @@ export const addPortalApiRoutes = (lti: any) => {
     let activityUrl = `${ensureTrailingSlash(token.iss)}${resource.id}`
     if (custom?.slug) {
       const resourceInfo = findResource(custom.slug);
-      if (resourceInfo && resourceInfo.tool !== "internal") {
+      const isApTool = resourceInfo && resourceInfo.tool.type === "ap";
+      const isClueTool = resourceInfo && resourceInfo.tool.type === "clue";
+      if (isApTool) {
+        const tool = resourceInfo.tool as ApTool;
         const rawAPParams: any = {};
-        if (resourceInfo.tool.activity) {
-          rawAPParams.activity = resourceInfo.tool.activity;
-        } else if (resourceInfo.tool.sequence) {
-          rawAPParams.sequence = resourceInfo.tool.sequence;
+        if (tool.activity) {
+          rawAPParams.activity = tool.activity;
+        } else if (tool.sequence) {
+          rawAPParams.sequence = tool.sequence;
         }
         const apUrl = new URL(apBaseUrl);
         apUrl.search = new URLSearchParams(rawAPParams).toString();
 
         activityUrl = apUrl.toString();
+      } else if (isClueTool) {
+        const tool = resourceInfo.tool as ClueTool;
+        const { problem, unit } = tool;
+        const clueUrl = new URL(clueBaseUrl);
+        clueUrl.search = new URLSearchParams({ problem, unit}).toString();
+
+        activityUrl = clueUrl.toString();
       }
     }
 

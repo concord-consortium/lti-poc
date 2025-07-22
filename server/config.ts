@@ -37,6 +37,7 @@ export const dbPort = process.env.DB_PORT!
 export const localJWTSecret = process.env.LOCAL_JWT_SECRET!
 export const ltiKey = process.env.LTI_KEY!
 export const apBaseUrl = process.env.AP_BASE_URL!
+export const clueBaseUrl = process.env.CLUE_BASE_URL!
 
 export const logRequests = process.env.LOG_REQUESTS === 'true'
 export const logRequestsPath = process.env.LOG_REQUESTS_PATH || '/tmp/requests.log'

@@ -12,18 +12,16 @@ export type Client = {
 }
 
 export const clients: Client[] = [
-  /*
 
   // use this for local testing with ngrok and MooDIY
 
   {
-    id: "qDO9D8tFDYgEG8k",
+    id: "DWlzm6Imq9vN286",
     name: "CC Moodle All Resources (ngrok)",
     description: "All Resources on Moodle (ngrok)",
     platform: "moodle",
     tags: "*" // "*" means all tags are enabled
   },
-  */
 
   {
     id: "xC2r1SuSGMU1k19",

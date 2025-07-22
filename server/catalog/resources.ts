@@ -1,7 +1,12 @@
 import { Tag } from "./tags";
 
-export type ApTool = {type: "ap", activity?: string, sequence?: string}
-export type Tool = "internal" | ApTool;
+export type BaseTool = {
+  type: string;
+}
+export type ApTool = BaseTool & { type: "ap", activity?: string, sequence?: string }
+export type ClueTool = BaseTool & { type: "clue", problem: string, unit: string }
+export type InternalTool = BaseTool & { type: "internal" }
+export type Tool = InternalTool | ApTool | ClueTool;
 
 export type Resource = {
   slug: string;
@@ -16,28 +21,28 @@ const devResources: Resource[] = [
     slug: "ap-launch-demo",
     title: "AP Launch Demo",
     description: "A demo resource for launching the AP tool.",
-    tool: "internal",
+    tool: {type: "internal"},
     tags: ["dev"]
   },
   {
     slug: "names-and-roles-demo",
     title: "Names and Roles Demo",
     description: "A demo resource for testing names and roles.",
-    tool: "internal",
+    tool: {type: "internal"},
     tags: ["dev"]
   },
   {
     slug: "token-debugger",
     title: "Token Debugger",
     description: "A tool for debugging tokens.",
-    tool: "internal",
+    tool: {type: "internal"},
     tags: ["dev"]
   },
   {
     slug: "grading-demo",
     title: "Grading Demo",
     description: "A demo resource for grading.",
-    tool: "internal",
+    tool: {type: "internal"},
     tags: ["dev"]
   }
 ];
@@ -225,13 +230,24 @@ export const buildingModelsResources: Resource[] = [
   }
 ];
 
+export const mothEdResources: Resource[] = [
+    {
+    slug: "clue-it-yourself",
+    title: "CLUE-It-Yourself",
+    description: "Build your investigation in this open version of MothEd CLUE.",
+    tool: {type: "clue", problem: "1.1", unit: "clue-basic"},
+    tags: ["moth-ed"]
+  }
+]
+
 export const allResources: Resource[] = [
   ...devResources,
   ...elementarySchoolResources,
   ...middleSchoolResources,
   ...interactionsResources,
   ...inquiryspaceResources,
-  ...buildingModelsResources
+  ...buildingModelsResources,
+  ...mothEdResources
 ]
 
 export const findResource = (slug?: string): Resource | undefined => {

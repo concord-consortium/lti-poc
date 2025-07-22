@@ -1,8 +1,8 @@
 import * as jwt from "jsonwebtoken"
 
-import { localJWTSecret, localJWTAlg, publicUrl, apBaseUrl } from "../config";
+import { localJWTSecret, localJWTAlg, publicUrl, apBaseUrl, clueBaseUrl } from "../config";
 import { getUserType, getTeacherPage } from "../helpers";
-import { ApTool } from "../catalog/resources";
+import { ApTool, ClueTool } from "../catalog/resources";
 
 export const apLaunchDemo = (res: any, token: any) => {
   apLaunch(res, token, {type: "ap", activity: "https://authoring.lara.staging.concord.org/api/v1/activities/1416.json"});
@@ -83,4 +83,43 @@ export const apLaunch = (res: any, token: any, tool: ApTool) => {
       }]
 
   */
+}
+
+export const clueLaunch = (res: any, token: any, tool: ClueTool) => {
+  // reencode the token to a JWT that we can verify the signature of
+  const localJWT = jwt.sign(token, localJWTSecret, {algorithm: localJWTAlg})
+  const rawCLUEParams: any = {
+    domain: `${publicUrl}/`,
+    token: localJWT,
+    answersSourceKey: new URL(token.iss).hostname, // this is the platform URL
+  }
+
+  const { problem, unit } = tool;
+  if (problem && unit) {
+    rawCLUEParams.problem = problem;
+    rawCLUEParams.unit = unit;
+  } else {
+    return res.status(400).send({ status: 400, error: 'Bad Request', details: { message: 'Missing required fields: problem or unit.' } });
+  }
+
+  const isProd = clueBaseUrl.includes("collaborative-learning.concord.org");
+  const firebaseApp = isProd ? "report-service-pro" : "report-service-dev";
+  // const sourceKey = isProd ? "authoring.concord.org" : "authoring.lara.staging.concord.org";
+
+  rawCLUEParams.firebaseApp = firebaseApp;
+  const clueUrl = new URL(clueBaseUrl);
+  clueUrl.search = new URLSearchParams(rawCLUEParams).toString();
+
+  switch (getUserType(token, {treatAdministratorAsLearner: true})) {
+    case "learner":
+      return res.redirect(clueUrl.toString());
+      break;
+
+    case "teacher":
+      return res.redirect(clueUrl.toString());
+      break;
+
+    default:
+      return res.status(403).send("This tool is only available for learners and teachers.");
+  }
 }

@@ -5,6 +5,7 @@ export const tags = [
   "building-models",
   "ngss-elementary-school",
   "ngss-middle-school",
+  "moth-ed"
 ] as const;
 
 export type Tag = (typeof tags)[number];

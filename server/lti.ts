@@ -3,7 +3,7 @@ import path from "path"
 import { dynamicRegistrationName, ltiKey, publicUrl } from "./config"
 import { db } from "./db"
 import { middleware } from "./middleware"
-import { apLaunch, apLaunchDemo } from "./resources/ap-launch"
+import { apLaunch, apLaunchDemo, clueLaunch } from "./resources/ap-launch"
 import { gradingDemo } from "./resources/grading-demo"
 import { findResource } from "./catalog/resources"
 import { clients } from "./catalog/clients"
@@ -52,7 +52,7 @@ lti.onConnect(async (token, req, res) => {
     return res.send(`Unknown resource: ${slug}!`)
   }
 
-  if (resource.tool === "internal") {
+  if (resource.tool.type === "internal") {
     switch (slug) {
       case "token-debugger":
         return debug(token)
@@ -75,7 +75,11 @@ lti.onConnect(async (token, req, res) => {
     return apLaunch(res, token, resource.tool)
   }
 
-  return res.send(`Unknown resource tool: ${resource.tool.type}!`)
+  if (resource.tool.type === "clue") {
+    return clueLaunch(res, token, resource.tool)
+  }
+
+  return res.send(`Unknown resource tool: ${resource.tool}!`)
 })
 
 lti.onDynamicRegistration(async (req, res, next) => {
