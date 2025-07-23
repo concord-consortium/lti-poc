@@ -68,6 +68,7 @@ const loadFirebaseConfig = (fileName: string): FirebaseConfig => {
 export const reportServiceDevConfig = loadFirebaseConfig('report-service-dev.json')
 export const reportServiceProConfig = loadFirebaseConfig('report-service-pro.json')
 export const tokenServiceConfig = loadFirebaseConfig('token-service.json')
+export const collaborativeLearningConfig = loadFirebaseConfig('collaborative-learning.json')
 
 export const localJWTAlg = 'HS256'
 

@@ -1,6 +1,6 @@
 import * as jwt from 'jsonwebtoken'
 
-import { localJWTSecret, publicUrl, localJWTAlg, reportServiceDevConfig, reportServiceProConfig, tokenServiceConfig, apBaseUrl, clueBaseUrl } from "./config";
+import { localJWTSecret, publicUrl, localJWTAlg, reportServiceDevConfig, reportServiceProConfig, tokenServiceConfig, apBaseUrl, clueBaseUrl, collaborativeLearningConfig } from "./config";
 import { getUserType, getUserId, getUserInfo, computeClassHash, ensureTrailingSlash, computeUidHash } from "./helpers";
 import { addToWhitelist } from './whitelist';
 import { ApTool, ClueTool, findResource } from './catalog/resources';
@@ -15,7 +15,13 @@ export const addPortalApiRoutes = (lti: any) => {
     "/api/v1/jwt/firebase",
     {route: new RegExp("/api/v1/classes/\\d+"), method: "GET"},
     {route: new RegExp("/api/v1/offerings/\\d+"), method: "GET"},
+    {route: new RegExp("/api/v1/offerings/"), method: "GET"},
   )
+
+  const getToken = (res: any) => {
+    // the token here can either be a LTI token or a portal token depending if AP or the dashboard is calling this endpoint
+    return res.locals.portalToken.ltiToken || res.locals.portalToken;
+  }
 
   // receives a signed JWT of the LMS token, signed with the localJWTSecret and returns a JWT that looks like it came from the portal
   lti.app.get('/api/v1/jwt/portal', (req, res) => {
@@ -67,7 +73,7 @@ export const addPortalApiRoutes = (lti: any) => {
   });
 
   const getOfferingInfo = (token: any) => {
-    const {resource, custom} = token.platformContext;
+    const {resource, custom, context} = token.platformContext;
 
     let activityUrl = `${ensureTrailingSlash(token.iss)}${resource.id}`
     if (custom?.slug) {
@@ -98,6 +104,7 @@ export const addPortalApiRoutes = (lti: any) => {
 
     const offeringInfo: any = {
       id: resource.id,
+      clazz_hash: computeClassHash(context.id),
       activity_url: activityUrl,
       rubric_url: null, // TODO: figure out if this is available in LTI
       locked: false, // TODO: figure out if this is available in LTI
@@ -107,10 +114,7 @@ export const addPortalApiRoutes = (lti: any) => {
   }
 
   lti.app.get('/api/v1/classes/:id', async (req, res) => {
-    // NOTE: we ignore the id here, we use the getMembers method to get the class info
-    // which uses the class information in the LTI token
-    const token = res.locals.portalToken.ltiToken || res.locals.portalToken;
-    // const {ltiToken} = res.locals.portalToken;
+    const token = getToken(res);
 
     const classInfo: any = {
       id: token.platformContext.context.id,
@@ -148,9 +152,14 @@ export const addPortalApiRoutes = (lti: any) => {
     return res.status(200).send(classInfo);
   });
 
+  lti.app.get('/api/v1/offerings', async (req, res) => {
+    const token = getToken(res);
+    const offeringInfo = getOfferingInfo(token);
+    return res.status(200).send([offeringInfo]);
+  });
+
   lti.app.get('/api/v1/offerings/:id', async (req, res) => {
-    // the token here can either be a LTI token or a portal token depending if AP or the dashboard is calling this endpoint
-    const token = res.locals.portalToken.ltiToken || res.locals.portalToken;
+    const token = getToken(res);
 
     const offeringInfo = getOfferingInfo(token);
 
@@ -172,7 +181,7 @@ export const addPortalApiRoutes = (lti: any) => {
       });
     }
 
-    if (!["report-service-dev", "report-service-pro", "token-service"].includes(firebase_app)) {
+    if (!["report-service-dev", "report-service-pro", "token-service", "collaborative-learning"].includes(firebase_app)) {
       return res.status(400).send({
         status: 400,
         error: 'Bad Request',
@@ -182,11 +191,10 @@ export const addPortalApiRoutes = (lti: any) => {
     const firebaseConfig =
       firebase_app === 'report-service-dev' ? reportServiceDevConfig :
       firebase_app === 'report-service-pro' ? reportServiceProConfig :
+      firebase_app === 'collaborative-learning' ? collaborativeLearningConfig :
       tokenServiceConfig;
 
-    // the token here can either be a LTI token or a portal token depending if AP or the dashboard is calling this endpoint
-    const token = res.locals.portalToken.ltiToken || res.locals.portalToken;
-    // const { ltiToken } = res.locals.portalToken;
+    const token = getToken(res);
     const userId = getUserId(token);
 
     const subClaims: any = {

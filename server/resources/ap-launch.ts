@@ -85,6 +85,26 @@ export const apLaunch = (res: any, token: any, tool: ApTool) => {
   */
 }
 
+
+/*
+  NOTE FOR POSTERITY (FROM DOUG):
+
+  The current code fails to launch due to LTI rostering issues when we are in edit mode.
+
+  CLUE expects that a learner launch has the current user in the list of students returned in the class info.
+
+  The class api endpoint in portal-api.ts is using the LTI rostering service but that just returns the list of students in the course.
+  When we are authoring the author is not a student so we hit an auth error in CLUE were it can't find the current user in the list of students.
+
+  Unfortunately there does not seem to be a way in LTI to tell we are in authoring mode based on the LTI token sent to us.
+  If we could do that we could switch the launch url to cause CLUE to do something like use demo mode like we do for the portal preview buttons.
+  I did try to just add the teacher as a user in the class info endpoint and that worked in my case but that would probably cause other downstream auth errors.
+  When I do that I get past the student check but then a Firebase permission issue.
+
+  We could also change the editor launch to use the CLUE teacher tools by removing the {treatAdministratorAsLearner: true} option
+  and then doing a dashboard launch but that would be a little weird as normally you want to see what the student sees in authoring mode.
+*/
+
 export const clueLaunch = (res: any, token: any, tool: ClueTool) => {
   // reencode the token to a JWT that we can verify the signature of
   const localJWT = jwt.sign(token, localJWTSecret, {algorithm: localJWTAlg})
