@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>CODAP (LTI)</title>
+  <style>
+    html, body { height: 100%; margin: 0; font-family: Arial, sans-serif; }
+    #bar { display: flex; align-items: center; gap: 12px; padding: 6px 10px; background: #f3f3f3; border-bottom: 1px solid #ccc; font-size: 14px; }
+    #bar .status { color: #555; }
+    #bar .readonly { color: #a00; font-weight: bold; }
+    #frame { position: absolute; top: 34px; left: 0; right: 0; bottom: 0; }
+    #frame iframe { width: 100%; height: 100%; border: 0; }
+    #list { padding: 2em; }
+    #list table { border-collapse: collapse; }
+    #list td, #list th { padding: 6px 12px; border-bottom: 1px solid #ddd; text-align: left; }
+    #list button { margin-right: 8px; }
+    .error { color: #a00; padding: 2em; }
+  </style>
+</head>
+<body>
+  <div id="bar"><span id="title"></span><span id="mode"></span><span id="status" class="status"></span></div>
+  <div id="list" hidden></div>
+  <div id="frame" hidden></div>
+  <script src="/vendor/iframe-phone.js"></script>
+  <script>
+    const params = new URLSearchParams(location.search)
+    const ltik = params.get("ltik")
+    const student = params.get("student")
+    const preview = params.get("preview")
+    if (!ltik) { document.body.innerHTML = '<div class="error">Missing ltik.</div>'; throw new Error("ltik required") }
+
+    const $ = id => document.getElementById(id)
+    const setStatus = (s) => { $("status").textContent = s }
+    const withLtik = (path, extra = {}) => {
+      const u = new URL(path, location.origin)
+      u.searchParams.set("ltik", ltik)
+      for (const [k, v] of Object.entries(extra)) if (v != null) u.searchParams.set(k, v)
+      return u.toString()
+    }
+
+    // ---- teacher: list of student documents ----
+    function renderList(info) {
+      $("mode").textContent = "(teacher view)"
+      const list = $("list"); list.hidden = false
+      const rows = info.students.map(s => `
+        <tr><td>${escapeHtml(s.name)}</td><td>${new Date(s.updatedAt).toLocaleString()}</td>
+            <td><a href="${withLtik("/codap-host.html", {student: s.userId})}">Open (read-only)</a></td></tr>`).join("")
+      list.innerHTML = `
+        <h2>${escapeHtml(info.title)}</h2>
+        <p><a href="${withLtik("/codap-host.html", {preview: "true"})}">Preview the source document</a> (read-only)</p>
+        <h3>Student documents</h3>
+        ${info.students.length ? `<table><tr><th>Student</th><th>Last saved</th><th></th></tr>${rows}</table>`
+                               : "<p>No students have opened this yet.</p>"}
+        <p style="color:#777;font-size:12px">Prototype: documents are listed as students save them. A real version would use the Names and Roles service to show the whole roster.</p>`
+    }
+    function escapeHtml(s) { return String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])) }
+
+    // ---- embed CODAP and drive it over the interactive API ----
+    function renderCodap(info) {
+      const readOnly = !!info.readOnly
+      $("mode").innerHTML = readOnly ? '<span class="readonly">read-only: changes are not saved</span>'
+                                     : (info.firstLaunch ? "(new copy from source document)" : "(your saved copy)")
+      const frameDiv = $("frame"); frameDiv.hidden = false
+      const iframe = document.createElement("iframe")
+      const url = new URL(info.codapUrl)
+      // interactiveApi: CFM saves/loads through the host (this page). The rest just quiets the startup UI.
+      for (const k of ["interactiveApi", "hideSplashScreen", "noEntryModal", "suppressUnsavedWarning"]) url.searchParams.set(k, "")
+      iframe.src = url.toString().replace(/=(&|$)/g, "$1")
+      frameDiv.appendChild(iframe)
+
+      let latestState = info.state ?? null
+      let saveTimer = null
+      let saving = false
+      let pending = false // a newer state arrived while a save was in flight
+
+      const phone = new iframePhone.ParentEndpoint(iframe, () => {
+        // mirrors the subset of Activity Player's initInteractive that CFM/CODAP use
+        phone.post("initInteractive", {
+          version: 1,
+          error: null,
+          mode: "runtime",
+          hostFeatures: { modal: { version: "1.0.0", lightbox: false, dialog: false, alert: false }, domain: location.hostname },
+          authoredState: null,
+          interactiveState: latestState,
+          globalInteractiveState: null,
+          interactiveStateUrl: "",
+          collaboratorUrls: null,
+          classInfoUrl: "",
+          interactive: { id: "codap-lti", name: info.title },
+          authInfo: { provider: "lti", loggedIn: true, email: "" },
+          linkedInteractives: [],
+          themeInfo: { colors: { colorA: "", colorB: "" } },
+          accessibility: { fontSize: "normal", fontSizeInPx: 16, fontType: "normal", fontFamilyForType: "" },
+          mediaLibrary: { enabled: false, items: [] }
+        })
+        setStatus("CODAP connected")
+      })
+
+      // CODAP (via CFM) sends its document here on every autosave (every ~5 s when dirty)
+      phone.addListener("interactiveState", (state) => {
+        if (state === undefined || state === "nochange" || state === "touch") return
+        latestState = state
+        if (readOnly) { setStatus("edited (not saved)"); return }
+        clearTimeout(saveTimer)
+        saveTimer = setTimeout(saveState, 250)
+      })
+
+      async function saveState() {
+        if (saving) { pending = true; return }
+        saving = true
+        pending = false
+        setStatus("saving…")
+        try {
+          const r = await fetch(withLtik("/codap/state"), {
+            method: "POST",
+            headers: { "Content-Type": "application/x-codap-state" }, // bypasses ltijs's 100 KB JSON parser
+            body: JSON.stringify(latestState)
+          })
+          const j = await r.json()
+          setStatus(r.ok ? `saved ${new Date().toLocaleTimeString()} (${Math.round(j.bytes/1024)} KB)` : `save failed: ${r.status}`)
+        } catch (e) { setStatus("save failed: " + e.message) }
+        saving = false
+        if (pending) saveState() // latestState changed during the save; write it now
+      }
+
+      // CFM asks for an upload/download URL when the document is >= 400 KiB
+      phone.addListener("getAttachmentUrl", (req) => {
+        const url = withLtik(`/codap/attachments/${encodeURIComponent(req.name)}`, { student: info.student })
+        if (req.operation === "write" && readOnly) {
+          phone.post("attachmentUrl", { requestId: req.requestId, error: "read-only launch" })
+        } else {
+          phone.post("attachmentUrl", { requestId: req.requestId, url })
+        }
+      })
+
+      phone.addListener("supportedFeatures", () => {})
+      phone.addListener("height", () => {})
+      phone.addListener("log", (e) => console.debug("CODAP log:", e))
+    }
+
+    // ---- start ----
+    fetch(withLtik("/codap/launch-info", { student, preview }))
+      .then(r => r.ok ? r.json() : r.json().then(j => { throw new Error(j.error || r.status) }))
+      .then(info => {
+        $("title").textContent = info.title
+        if (info.mode === "list") renderList(info); else renderCodap(info)
+      })
+      .catch(e => { document.body.innerHTML = `<div class="error">Launch failed: ${escapeHtml(e.message)}</div>` })
+  </script>
+</body>
+</html>

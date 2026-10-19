@@ -5,6 +5,7 @@ import { db } from "./db"
 import { middleware } from "./middleware"
 import { apLaunch, apLaunchDemo } from "./resources/ap-launch"
 import { gradingDemo } from "./resources/grading-demo"
+import { codapLaunch } from "./resources/codap-launch"
 import { findResource } from "./catalog/resources"
 import { clients } from "./catalog/clients"
 
@@ -75,6 +76,10 @@ lti.onConnect(async (token, req, res) => {
     return apLaunch(res, token, resource.tool)
   }
 
+  if (resource.tool.type === "codap") {
+    return codapLaunch(res)
+  }
+
   return res.send(`Unknown resource tool: ${resource.tool.type}!`)
 })
 
@@ -85,7 +90,17 @@ lti.onDynamicRegistration(async (req, res, next) => {
       "https://purl.imsglobal.org/spec/lti-tool-configuration": {
         custom_parameters: {
           // add any custom parameters you want to include in the registration
-        }
+        },
+        messages: [
+          {
+            type: "LtiDeepLinkingRequest",
+            label: dynamicRegistrationName,
+            placements: [
+              "https://canvas.instructure.com/lti/link_selection",
+              "https://canvas.instructure.com/lti/assignment_selection"
+            ]
+          }
+        ]
       }
     })
     res.setHeader("Content-type", "text/html")

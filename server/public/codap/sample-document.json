@@ -1,0 +1,50 @@
+{
+  "name": "LTI Sample Document",
+  "appName": "DG",
+  "appVersion": "2.0",
+  "appBuildNum": "0",
+  "guid": 1,
+  "globalValues": [],
+  "contexts": [
+    {
+      "type": "DG.DataContext",
+      "document": 1,
+      "guid": 100,
+      "id": 100,
+      "name": "Mammals",
+      "title": "Mammals",
+      "collections": [
+        {
+          "guid": 200,
+          "id": 200,
+          "name": "Mammals",
+          "title": "Mammals",
+          "attrs": [
+            { "guid": 300, "id": 300, "name": "Animal", "type": "categorical" },
+            { "guid": 301, "id": 301, "name": "Mass_kg", "type": "numeric" },
+            { "guid": 302, "id": 302, "name": "Lifespan_years", "type": "numeric" }
+          ],
+          "cases": [
+            { "guid": 400, "id": 400, "values": { "Animal": "Elephant", "Mass_kg": 5000, "Lifespan_years": 70 } },
+            { "guid": 401, "id": 401, "values": { "Animal": "Lion", "Mass_kg": 190, "Lifespan_years": 15 } },
+            { "guid": 402, "id": 402, "values": { "Animal": "Rabbit", "Mass_kg": 2, "Lifespan_years": 9 } },
+            { "guid": 403, "id": 403, "values": { "Animal": "Dolphin", "Mass_kg": 150, "Lifespan_years": 40 } },
+            { "guid": 404, "id": 404, "values": { "Animal": "Mouse", "Mass_kg": 0.02, "Lifespan_years": 2 } }
+          ]
+        }
+      ]
+    }
+  ],
+  "components": [
+    {
+      "type": "DG.TableView",
+      "guid": 500,
+      "id": 500,
+      "componentStorage": {
+        "_links_": { "context": { "type": "DG.DataContextRecord", "id": 100 } },
+        "title": "Mammals"
+      },
+      "layout": { "left": 10, "top": 10, "width": 520, "height": 260 }
+    }
+  ]
+}

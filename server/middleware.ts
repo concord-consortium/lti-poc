@@ -3,10 +3,23 @@ import fs from "fs"
 import path from "path"
 
 import { localJWTSecret, logRequests, logRequestsPath } from "./config"
+import { installRawBodyForCodap } from "./codap/codap-api"
 
 // ltijs has an setting for a server addon, which is a middleware function that runs before the request is processed
 
 export const middleware = (app) => {
+
+  // /codap/* bodies can exceed the 100 KB body-parser limit ltijs installs; read them raw
+  installRawBodyForCodap(app)
+
+  // ltijs runs helmet, whose defaults include Cross-Origin-Embedder-Policy: require-corp.
+  // That blocks our pages from embedding cross-origin iframes (e.g. CODAP) in secure
+  // contexts (https LMSs). We don't need COEP (it exists for SharedArrayBuffer), so drop it.
+  app.use((req, res, next) => {
+    res.removeHeader("Cross-Origin-Embedder-Policy")
+    res.removeHeader("Cross-Origin-Opener-Policy")
+    next()
+  })
 
   // rewrite / to /index.html so that the static file is served
   app.use((req, res, next) => {
