@@ -6,7 +6,7 @@ import { getUserInfo } from "../helpers"
 import { loadState, saveState, listStudents, saveAttachment, loadAttachment, resourceLinkKey, userKey,
          loadAssignment, saveAssignment, newAssignmentId, AssignmentRecord, getStudent, setProgress } from "./store"
 
-export const codapUrl = process.env.CODAP_URL || "https://codap3.concord.org/"
+export const codapUrl = process.env.CODAP_URL || "https://codap.concord.org/app/"
 
 // Teacher = has an Instructor role, or an Administrator role without a Learner role.
 // (The POC's getUserType() treats Administrator as learner for AP; here admins who
