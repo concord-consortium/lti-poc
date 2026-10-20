@@ -1,6 +1,7 @@
 import { clients } from "./catalog/clients"
 import { allResources } from "./catalog/resources"
 import { publicUrl } from "./config"
+import { createCustomAssignment } from "./codap/codap-api"
 
 // these are routes that our LTI tool exposes
 
@@ -19,14 +20,27 @@ export const addApiRoutes = (lti: any) => {
   lti.app.post('/deeplink', async (req, res) => {
     const resource = req.body
 
+    const custom: Record<string, string> = { slug: resource.slug }
+    let title = resource.title
+
+    // "Custom CODAP document": the teacher pasted a share link or URL. Validate it,
+    // store an assignment record, and reference the record from the launch.
+    if (resource.slug === "codap-custom") {
+      try {
+        const rec = await createCustomAssignment(res.locals.token, resource.documentInput, resource.title)
+        custom.assignment_id = rec.id // all lowercase: Schoology lowercases custom parameter names
+        title = rec.title
+      } catch (e: any) {
+        return res.status(400).send({ status: 400, error: 'Bad Request', details: { message: e?.message || 'Invalid document' } })
+      }
+    }
+
     const items = [
       {
         type: 'ltiResourceLink',
-        title: resource.title,
+        title,
         url: `${publicUrl}/launch`,
-        custom: {
-          slug: resource.slug
-        }
+        custom
       }
     ]
 

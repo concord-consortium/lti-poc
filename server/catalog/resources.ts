@@ -1,7 +1,10 @@
 import { Tag } from "./tags";
 
 export type ApTool = {type: "ap", activity?: string, sequence?: string}
-export type Tool = "internal" | ApTool;
+// documentUrl: a full URL, or a path under server/public (e.g. "/codap/sample-document.json").
+// Omit it to start students with an empty CODAP document.
+export type CodapTool = {type: "codap", documentUrl?: string}
+export type Tool = "internal" | ApTool | CodapTool;
 
 export type Resource = {
   slug: string;
@@ -38,6 +41,20 @@ const devResources: Resource[] = [
     title: "Grading Demo",
     description: "A demo resource for grading.",
     tool: "internal",
+    tags: ["dev"]
+  },
+  {
+    slug: "codap-custom",
+    title: "Custom CODAP document",
+    description: "Paste a CODAP share link or a URL to a CODAP document. Each student gets their own auto-saved copy; teachers can open student copies read-only.",
+    tool: {type: "codap"}, // documentUrl comes from the assignment record created at Deep Linking time
+    tags: ["dev"]
+  },
+  {
+    slug: "codap-demo",
+    title: "CODAP Demo (Mammals)",
+    description: "Prototype: launches CODAP v3 with a small sample document. Each student gets their own auto-saved copy; teachers can open student copies read-only.",
+    tool: {type: "codap", documentUrl: "/codap/sample-document.json"},
     tags: ["dev"]
   }
 ];
