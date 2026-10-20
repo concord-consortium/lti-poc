@@ -44,6 +44,13 @@ const devResources: Resource[] = [
     tags: ["dev"]
   },
   {
+    slug: "codap-custom",
+    title: "Custom CODAP document",
+    description: "Paste a CODAP share link or a URL to a CODAP document. Each student gets their own auto-saved copy; teachers can open student copies read-only.",
+    tool: {type: "codap"}, // documentUrl comes from the assignment record created at Deep Linking time
+    tags: ["dev"]
+  },
+  {
     slug: "codap-demo",
     title: "CODAP Demo (Mammals)",
     description: "Prototype: launches CODAP v3 with a small sample document. Each student gets their own auto-saved copy; teachers can open student copies read-only.",

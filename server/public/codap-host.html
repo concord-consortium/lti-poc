@@ -58,7 +58,14 @@
     // ---- embed CODAP and drive it over the interactive API ----
     function renderCodap(info) {
       const readOnly = !!info.readOnly
-      $("mode").innerHTML = readOnly ? '<span class="readonly">read-only: changes are not saved</span>'
+      let whose = ""
+      if (readOnly) {
+        whose = info.student
+          ? `Viewing <b>${escapeHtml(info.studentName || info.student)}</b>'s work` +
+            (info.studentUpdatedAt ? ` (last saved ${new Date(info.studentUpdatedAt).toLocaleString()})` : "")
+          : "Previewing the source document"
+      }
+      $("mode").innerHTML = readOnly ? `${whose} &middot; <span class="readonly">read-only: changes are not saved</span>`
                                      : (info.firstLaunch ? "(new copy from source document)" : "(your saved copy)")
       const frameDiv = $("frame"); frameDiv.hidden = false
       const iframe = document.createElement("iframe")

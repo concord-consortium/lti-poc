@@ -64,3 +64,29 @@ export const loadAttachment = (rlKey: string, uKey: string, name: string): Buffe
   const p = path.join(recordDir(rlKey, uKey), "attachments", safeName(name))
   return fs.existsSync(p) ? fs.readFileSync(p) : null
 }
+
+// Teacher-created assignments ("custom CODAP document"): one record per Deep Linking
+// response. The LMS launch carries the record id as a custom parameter.
+export type AssignmentRecord = {
+  id: string
+  title: string
+  documentUrl: string      // resolved, fetchable URL of the source document ("live": fetched on each first launch)
+  originalInput: string    // what the teacher pasted (share link or URL)
+  createdBy: string        // LMS user id of the teacher
+  createdAt: string
+}
+
+const assignmentsDir = path.join(dataRoot, "assignments")
+
+export const saveAssignment = (rec: AssignmentRecord) => {
+  fs.mkdirSync(assignmentsDir, { recursive: true })
+  fs.writeFileSync(path.join(assignmentsDir, `${rec.id}.json`), JSON.stringify(rec, null, 2))
+}
+
+export const loadAssignment = (id: string): AssignmentRecord | null => {
+  if (!/^[a-f0-9]{24}$/.test(id)) return null
+  const p = path.join(assignmentsDir, `${id}.json`)
+  return fs.existsSync(p) ? readJson(p, null) : null
+}
+
+export const newAssignmentId = () => hash(`${Date.now()}|${Math.random()}`)

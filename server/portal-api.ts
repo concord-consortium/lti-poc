@@ -72,7 +72,7 @@ export const addPortalApiRoutes = (lti: any) => {
     let activityUrl = `${ensureTrailingSlash(token.iss)}${resource.id}`
     if (custom?.slug) {
       const resourceInfo = findResource(custom.slug);
-      if (resourceInfo && resourceInfo.tool !== "internal") {
+      if (resourceInfo && resourceInfo.tool !== "internal" && resourceInfo.tool.type === "ap") {
         const rawAPParams: any = {};
         if (resourceInfo.tool.activity) {
           rawAPParams.activity = resourceInfo.tool.activity;

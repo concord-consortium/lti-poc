@@ -3,7 +3,8 @@ import path from "path"
 
 import { findResource, CodapTool } from "../catalog/resources"
 import { getUserInfo } from "../helpers"
-import { loadState, saveState, listStudents, saveAttachment, loadAttachment, resourceLinkKey, userKey } from "./store"
+import { loadState, saveState, listStudents, saveAttachment, loadAttachment, resourceLinkKey, userKey,
+         loadAssignment, saveAssignment, newAssignmentId, AssignmentRecord } from "./store"
 
 export const codapUrl = process.env.CODAP_URL || "https://codap3.concord.org/"
 
@@ -16,17 +17,62 @@ export const isTeacher = (token: any) => {
   return has("#Instructor") || (has("#Administrator") && !has("#Learner"))
 }
 
-// Load the "source" document for a resource: either a URL or a path under server/public.
-const loadSourceDocument = async (tool: CodapTool): Promise<any | null> => {
-  if (!tool.documentUrl) return null
-  if (tool.documentUrl.startsWith("/")) {
-    const p = path.join(__dirname, "..", "public", tool.documentUrl)
+// ---- source documents ----
+
+// Turn what a teacher pasted into a fetchable URL.
+//  - CODAP share link: <codap url>#shared=<encoded public file URL>  -> the public file URL
+//  - legacy share link: #shared=<numeric id> (retired document store)  -> rejected
+//  - anything else: must be an http(s) URL
+export const resolveDocumentUrl = (input: string): { url?: string, error?: string } => {
+  const text = (input || "").trim()
+  if (!text) return { error: "Paste a CODAP share link or a document URL." }
+  let url: URL
+  try { url = new URL(text) } catch { return { error: "That is not a valid URL." } }
+  if (!/^https?:$/.test(url.protocol)) return { error: "The URL must start with http:// or https://." }
+  const hash = new URLSearchParams(url.hash.replace(/^#/, ""))
+  const shared = hash.get("shared")
+  if (shared) {
+    if (/^\d+$/.test(shared)) return { error: "This is an old-style CODAP share link (numeric id). Re-share the document from CODAP to get a current link." }
+    try {
+      const target = new URL(shared)
+      if (!/^https?:$/.test(target.protocol)) throw new Error()
+      return { url: target.toString() }
+    } catch { return { error: "The share link does not contain a valid document URL." } }
+  }
+  return { url: url.toString() }
+}
+
+// v2 documents have appName "DG"; v3 documents have content.rowMap and content.tileMap
+export const looksLikeCodapDocument = (doc: any) =>
+  !!doc && typeof doc === "object" &&
+  (doc.appName === "DG" || (doc.content && typeof doc.content === "object" && "rowMap" in doc.content && "tileMap" in doc.content))
+
+// Fetch a document by URL, or read it from server/public when the URL is a local path.
+export const loadDocumentFromUrl = async (documentUrl: string): Promise<any> => {
+  if (documentUrl.startsWith("/")) {
+    const p = path.join(__dirname, "..", "public", documentUrl)
     return JSON.parse(fs.readFileSync(p, "utf8"))
   }
-  const response = await fetch(tool.documentUrl)
-  if (!response.ok) throw new Error(`Could not load source document ${tool.documentUrl}: ${response.status}`)
-  return response.json()
+  const response = await fetch(documentUrl, { headers: { accept: "application/json" } })
+  if (!response.ok) throw new Error(`Could not load the document (${response.status}).`)
+  const doc = await response.json()
+  if (!looksLikeCodapDocument(doc)) throw new Error("That file is not a CODAP document.")
+  return doc
 }
+
+// Which source document does this launch use? Catalog resources carry it in the
+// catalog; "codap-custom" launches carry an assignment id as a custom parameter.
+const sourceForLaunch = (token: any, resource: any, tool: CodapTool): { documentUrl?: string, title: string } => {
+  if (resource.slug === "codap-custom") {
+    const rec = loadAssignment(token.platformContext?.custom?.assignmentId)
+    if (!rec) throw new Error("This assignment's document record was not found on the tool server.")
+    return { documentUrl: rec.documentUrl, title: rec.title }
+  }
+  return { documentUrl: tool.documentUrl, title: resource.title }
+}
+
+const loadSourceDocument = async (documentUrl?: string): Promise<any | null> =>
+  documentUrl ? loadDocumentFromUrl(documentUrl) : null
 
 // ltijs installs body parsers (100 KB limit) before our middleware runs. CODAP
 // documents and attachments are bigger than that, so for /codap/* we read the raw
@@ -83,6 +129,7 @@ export const addCodapRoutes = (lti: any) => {
       return res.status(400).send({ error: "Not a CODAP resource" })
     }
     const tool = resource.tool
+    const { documentUrl, title } = sourceForLaunch(token, resource, tool)
     const rlKey = resourceLinkKey(token)
     const teacher = isTeacher(token)
     const studentParam = typeof req.query.student === "string" ? req.query.student : undefined
@@ -92,21 +139,24 @@ export const addCodapRoutes = (lti: any) => {
       return res.send({
         role: "teacher",
         mode: "list",
-        title: resource.title,
+        title,
         students: listStudents(rlKey).map(s => ({ userId: s.userId, name: s.name, updatedAt: s.updatedAt }))
       })
     }
 
     // teacher viewing a student's document (read-only), or teacher previewing the source
     if (teacher) {
-      const state = studentParam ? loadState(rlKey, userKey(studentParam)) : await loadSourceDocument(tool)
+      const state = studentParam ? loadState(rlKey, userKey(studentParam)) : await loadSourceDocument(documentUrl)
+      const studentRec = studentParam ? listStudents(rlKey).find(s => s.userId === studentParam) : undefined
       return res.send({
         role: "teacher",
         mode: "view",
         readOnly: true,
-        title: resource.title,
+        title,
         codapUrl,
         student: studentParam ?? null,
+        studentName: studentRec?.name ?? null,
+        studentUpdatedAt: studentRec?.updatedAt ?? null,
         state
       })
     }
@@ -116,21 +166,36 @@ export const addCodapRoutes = (lti: any) => {
     let state = loadState(rlKey, uKey)
     let firstLaunch = false
     if (state === null) {
-      state = await loadSourceDocument(tool)
+      state = await loadSourceDocument(documentUrl)
       firstLaunch = true
     }
     return res.send({
       role: "learner",
       mode: "edit",
       readOnly: false,
-      title: resource.title,
+      title,
       codapUrl,
       firstLaunch,
       state
     })
     } catch (e: any) {
       console.error("codap launch-info failed:", e)
-      return res.status(502).send({ error: "Could not load the CODAP document" })
+      return res.status(502).send({ error: e?.message || "Could not load the CODAP document" })
+    }
+  })
+
+  // Picker calls this before letting a teacher submit a custom document: resolves the
+  // pasted link, fetches it, and confirms it is a CODAP document.
+  app.post("/codap/check-document", async (req, res) => {
+    try {
+      const body = JSON.parse(req.rawBody.toString("utf8"))
+      const { url, error } = resolveDocumentUrl(body.input)
+      if (error) return res.send({ ok: false, error })
+      const doc = await loadDocumentFromUrl(url)
+      const title = doc.name || doc.content?.title || doc.title || ""
+      return res.send({ ok: true, url, title })
+    } catch (e: any) {
+      return res.send({ ok: false, error: e?.message || "Could not load that document." })
     }
   })
 
@@ -174,4 +239,22 @@ export const addCodapRoutes = (lti: any) => {
     res.type("application/json")
     return res.send(content)
   })
+}
+
+// Called from /deeplink when the teacher chose "Custom CODAP document". Returns the
+// record to reference from the content item's custom parameters.
+export const createCustomAssignment = async (token: any, input: string, title: string): Promise<AssignmentRecord> => {
+  const { url, error } = resolveDocumentUrl(input)
+  if (error) throw new Error(error)
+  const doc = await loadDocumentFromUrl(url)
+  const rec: AssignmentRecord = {
+    id: newAssignmentId(),
+    title: (title || "").trim() || doc.name || doc.content?.title || "CODAP document",
+    documentUrl: url,
+    originalInput: input.trim(),
+    createdBy: token.user,
+    createdAt: new Date().toISOString()
+  }
+  saveAssignment(rec)
+  return rec
 }

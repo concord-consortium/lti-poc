@@ -80,7 +80,7 @@ lti.onConnect(async (token, req, res) => {
     return codapLaunch(res)
   }
 
-  return res.send(`Unknown resource tool: ${resource.tool.type}!`)
+  return res.send(`Unknown resource tool: ${(resource.tool as any).type}!`)
 })
 
 lti.onDynamicRegistration(async (req, res, next) => {

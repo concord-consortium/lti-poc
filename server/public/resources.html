@@ -29,6 +29,19 @@
 
   <div id="description" style="padding: 10px 0;">Loading resources...</div>
 
+  <div id="customFields" hidden style="border: 1px solid #ccc; padding: 1em; margin-bottom: 1em;">
+    <label for="documentInput">CODAP share link or document URL:</label>
+    <input id="documentInput" type="text" style="width: 100%; padding: 5px; box-sizing: border-box; display: block;"
+           placeholder="https://codap3.concord.org/#shared=... or https://.../document.json">
+    <div style="font-size: 12px; color: #555; margin: 0.4em 0 1em;">
+      In CODAP: Share &gt; Get link, then paste the link here. Google Drive links will not work; the document must be reachable by URL.
+    </div>
+    <label for="titleInput">Title (optional; defaults to the document's name):</label>
+    <input id="titleInput" type="text" style="width: 100%; padding: 5px; box-sizing: border-box; display: block; margin-bottom: 1em;">
+    <button id="checkBtn" type="button">Check document</button>
+    <div id="checkResult" style="font-size: 13px; margin-top: 0.5em;"></div>
+  </div>
+
   <button id="selectBtn">Select</button>
 
   <script>
@@ -116,14 +129,55 @@
 
         // Set initial description
         updateDescriptionBySlug(selectEl.value);
+        updateCustomVisibility();
       })
       .catch(err => {
         console.error("Error fetching resources:", err);
         descriptionEl.textContent = "Error loading resource list.";
       });
 
+    // ---- custom CODAP document ----
+    const customFields = document.getElementById('customFields');
+    const documentInput = document.getElementById('documentInput');
+    const titleInput = document.getElementById('titleInput');
+    const checkResult = document.getElementById('checkResult');
+    let checkedInput = null; // the input value that last passed "Check document"
+
+    function isCustomSelected() { return selectEl.value === "codap-custom"; }
+    function updateCustomVisibility() {
+      customFields.hidden = !isCustomSelected();
+      document.getElementById('selectBtn').disabled = isCustomSelected() && checkedInput !== documentInput.value.trim();
+    }
+    documentInput.addEventListener('input', () => { checkResult.textContent = ""; updateCustomVisibility(); });
+
+    document.getElementById('checkBtn').addEventListener('click', async () => {
+      checkResult.textContent = "Checking…";
+      try {
+        const r = await fetch(`/codap/check-document?ltik=${encodeURIComponent(ltik)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-codap-state' }, // raw-body route
+          body: JSON.stringify({ input: documentInput.value })
+        });
+        const j = await r.json();
+        if (j.ok) {
+          checkedInput = documentInput.value.trim();
+          if (!titleInput.value && j.title) titleInput.value = j.title;
+          checkResult.innerHTML = `<span style="color:#070">Looks good: a CODAP document${j.title ? ` named "${escapeHtml(j.title)}"` : ""}.</span>`;
+        } else {
+          checkedInput = null;
+          checkResult.innerHTML = `<span style="color:#a00">${escapeHtml(j.error || "Could not load that document.")}</span>`;
+        }
+      } catch (e) {
+        checkedInput = null;
+        checkResult.innerHTML = `<span style="color:#a00">Check failed: ${escapeHtml(e.message)}</span>`;
+      }
+      updateCustomVisibility();
+    });
+    function escapeHtml(s) { return String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+
     selectEl.addEventListener('change', () => {
       updateDescriptionBySlug(selectEl.value);
+      updateCustomVisibility();
     });
 
     document.getElementById('selectBtn').addEventListener('click', () => {
@@ -136,9 +190,10 @@
       }
 
       const resourcePayload = {
-        title: selected.title,
+        title: isCustomSelected() ? (titleInput.value.trim() || selected.title) : selected.title,
         url: "/launch",
         slug: selected.slug,
+        documentInput: isCustomSelected() ? documentInput.value.trim() : undefined,
         ltik: ltik
       };
 
@@ -149,7 +204,13 @@
         },
         body: JSON.stringify(resourcePayload)
       })
-      .then(response => response.text())
+      .then(async response => {
+        if (!response.ok) {
+          const j = await response.json().catch(() => ({}));
+          throw new Error(j.details?.message || `Server returned ${response.status}`);
+        }
+        return response.text();
+      })
       .then(html => {
         document.open();
         document.write(html);
