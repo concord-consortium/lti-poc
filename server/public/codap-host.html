@@ -42,16 +42,21 @@
     function renderList(info) {
       $("mode").textContent = "(teacher view)"
       const list = $("list"); list.hidden = false
+      const started = info.students.filter(s => s.started).length
       const rows = info.students.map(s => `
-        <tr><td>${escapeHtml(s.name)}</td><td>${new Date(s.updatedAt).toLocaleString()}</td>
-            <td><a href="${withLtik("/codap-host.html", {student: s.userId})}">Open (read-only)</a></td></tr>`).join("")
+        <tr><td>${escapeHtml(s.name)}</td>
+            <td>${s.started ? `Last saved ${new Date(s.updatedAt).toLocaleString()}` : '<span style="color:#888">Not started</span>'}</td>
+            <td>${s.started ? `<a href="${withLtik("/codap-host.html", {student: s.userId})}">Open (read-only)</a>` : ""}</td></tr>`).join("")
+      const source = info.rosterSource === "names-and-roles"
+        ? `Roster from the LMS (Names and Roles service): ${info.students.length} student${info.students.length === 1 ? "" : "s"}, ${started} started.`
+        : `Roster unavailable${info.rosterError ? ` (${escapeHtml(info.rosterError)})` : ""}; showing students who have saved work.`
       list.innerHTML = `
         <h2>${escapeHtml(info.title)}</h2>
         <p><a href="${withLtik("/codap-host.html", {preview: "true"})}">Preview the source document</a> (read-only)</p>
-        <h3>Student documents</h3>
-        ${info.students.length ? `<table><tr><th>Student</th><th>Last saved</th><th></th></tr>${rows}</table>`
-                               : "<p>No students have opened this yet.</p>"}
-        <p style="color:#777;font-size:12px">Prototype: documents are listed as students save them. A real version would use the Names and Roles service to show the whole roster.</p>`
+        <h3>Students</h3>
+        ${info.students.length ? `<table><tr><th>Student</th><th>Status</th><th></th></tr>${rows}</table>`
+                               : "<p>No students are enrolled yet.</p>"}
+        <p style="color:#777;font-size:12px">${source}</p>`
     }
     function escapeHtml(s) { return String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])) }
 

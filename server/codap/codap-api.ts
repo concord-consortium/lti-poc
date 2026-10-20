@@ -64,7 +64,10 @@ export const loadDocumentFromUrl = async (documentUrl: string): Promise<any> => 
 // catalog; "codap-custom" launches carry an assignment id as a custom parameter.
 const sourceForLaunch = (token: any, resource: any, tool: CodapTool): { documentUrl?: string, title: string } => {
   if (resource.slug === "codap-custom") {
-    const rec = loadAssignment(token.platformContext?.custom?.assignmentId)
+    // Schoology lowercases custom parameter names (Canvas does not), so match case-insensitively.
+    const custom = token.platformContext?.custom ?? {}
+    const key = Object.keys(custom).find(k => k.toLowerCase() === "assignment_id" || k.toLowerCase() === "assignmentid")
+    const rec = loadAssignment(key ? String(custom[key]) : "")
     if (!rec) throw new Error("This assignment's document record was not found on the tool server.")
     return { documentUrl: rec.documentUrl, title: rec.title }
   }
@@ -134,13 +137,37 @@ export const addCodapRoutes = (lti: any) => {
     const teacher = isTeacher(token)
     const studentParam = typeof req.query.student === "string" ? req.query.student : undefined
 
-    // teacher without a student selected: list students
+    // teacher without a student selected: list the class roster (Names and Roles)
+    // merged with who has saved work. Falls back to "who has saved" if the roster
+    // call fails, so the page still works when the LMS is slow or the service is off.
     if (teacher && !studentParam && req.query.preview !== "true") {
+      const saved = listStudents(rlKey)
+      const savedByUser = new Map(saved.map(s => [s.userId, s]))
+      let roster: Array<{ userId: string, name: string }> | null = null
+      let rosterError: string | null = null
+      try {
+        const result = await lti.NamesAndRoles.getMembers(token, { pages: 5 })
+        roster = (result?.members ?? [])
+          .filter(m => (m.roles ?? []).some((r: string) => r.includes("#Learner")))
+          .map(m => ({ userId: m.user_id, name: m.name || [m.given_name, m.family_name].filter(Boolean).join(" ") || m.user_id }))
+      } catch (e: any) {
+        rosterError = e?.message || "roster unavailable"
+        console.warn("Names and Roles lookup failed:", rosterError)
+      }
+      const rows = (roster ?? saved.map(s => ({ userId: s.userId, name: s.name }))).map(r => {
+        const rec = savedByUser.get(r.userId)
+        return { userId: r.userId, name: r.name, updatedAt: rec?.updatedAt ?? null, started: !!rec }
+      })
+      // anyone who saved but is no longer on the roster (dropped the course) still shows
+      for (const s of saved) if (!rows.some(r => r.userId === s.userId)) rows.push({ userId: s.userId, name: s.name, updatedAt: s.updatedAt, started: true })
+      rows.sort((a, b) => a.name.localeCompare(b.name))
       return res.send({
         role: "teacher",
         mode: "list",
         title,
-        students: listStudents(rlKey).map(s => ({ userId: s.userId, name: s.name, updatedAt: s.updatedAt }))
+        rosterSource: roster ? "names-and-roles" : "saved-only",
+        rosterError,
+        students: rows
       })
     }
 

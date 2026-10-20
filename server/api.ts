@@ -28,7 +28,7 @@ export const addApiRoutes = (lti: any) => {
     if (resource.slug === "codap-custom") {
       try {
         const rec = await createCustomAssignment(res.locals.token, resource.documentInput, resource.title)
-        custom.assignmentId = rec.id
+        custom.assignment_id = rec.id // all lowercase: Schoology lowercases custom parameter names
         title = rec.title
       } catch (e: any) {
         return res.status(400).send({ status: 400, error: 'Bad Request', details: { message: e?.message || 'Invalid document' } })
