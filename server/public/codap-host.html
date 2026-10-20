@@ -45,7 +45,7 @@
       const started = info.students.filter(s => s.started).length
       const rows = info.students.map(s => `
         <tr><td>${escapeHtml(s.name)}</td>
-            <td>${s.started ? `Last saved ${new Date(s.updatedAt).toLocaleString()}` : '<span style="color:#888">Not started</span>'}</td>
+            <td>${s.started ? `Last saved ${new Date(s.updatedAt).toLocaleString()}` : '<span style="color:#888">Not started</span>'}${s.progress === "Completed" ? ' &middot; <b>Done</b>' : ""}</td>
             <td>${s.started ? `<a href="${withLtik("/codap-host.html", {student: s.userId})}">Open (read-only)</a>` : ""}</td></tr>`).join("")
       const source = info.rosterSource === "names-and-roles"
         ? `Roster from the LMS (Names and Roles service): ${info.students.length} student${info.students.length === 1 ? "" : "s"}, ${started} started.`
@@ -72,6 +72,29 @@
       }
       $("mode").innerHTML = readOnly ? `${whose} &middot; <span class="readonly">read-only: changes are not saved</span>`
                                      : (info.firstLaunch ? "(new copy from source document)" : "(your saved copy)")
+      // grade passback: "Mark as done" posts Completed to the LMS gradebook (graded items only)
+      if (!readOnly && info.gradable) {
+        const btn = document.createElement("button")
+        btn.id = "doneBtn"
+        btn.textContent = info.progress === "Completed" ? "Marked as done ✓" : "Mark as done"
+        btn.disabled = info.progress === "Completed"
+        btn.style.marginLeft = "auto"
+        btn.addEventListener("click", async () => {
+          btn.disabled = true
+          btn.textContent = "Marking…"
+          try {
+            const r = await fetch(withLtik("/codap/progress"), {
+              method: "POST",
+              headers: { "Content-Type": "application/x-codap-state" },
+              body: JSON.stringify({ activityProgress: "Completed" })
+            })
+            const j = await r.json()
+            if (r.ok) { btn.textContent = "Marked as done ✓" }
+            else { btn.textContent = "Mark as done"; btn.disabled = false; setStatus("could not mark done: " + (j.detail || r.status)) }
+          } catch (e) { btn.textContent = "Mark as done"; btn.disabled = false; setStatus("could not mark done: " + e.message) }
+        })
+        $("bar").appendChild(btn)
+      }
       const frameDiv = $("frame"); frameDiv.hidden = false
       const iframe = document.createElement("iframe")
       const url = new URL(info.codapUrl)

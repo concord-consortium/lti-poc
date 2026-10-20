@@ -14,6 +14,7 @@ export type StudentRecord = {
   userId: string
   name: string
   updatedAt: string
+  progress?: "Started" | "Completed"   // last activityProgress we posted to the LMS gradebook
 }
 
 // a resource link is one assignment in one course in one LMS deployment
@@ -40,7 +41,17 @@ export const saveState = (rlKey: string, uKey: string, userId: string, name: str
   fs.writeFileSync(path.join(dir, "state.json"), JSON.stringify(state))
   // keep a per-resource-link index so the teacher page can list students
   const index: Record<string, StudentRecord> = readJson(indexPath(rlKey), {})
-  index[uKey] = { userId, name, updatedAt: new Date().toISOString() }
+  index[uKey] = { ...(index[uKey] ?? {}), userId, name, updatedAt: new Date().toISOString() }
+  fs.writeFileSync(indexPath(rlKey), JSON.stringify(index, null, 2))
+}
+
+export const getStudent = (rlKey: string, uKey: string): StudentRecord | undefined =>
+  (readJson(indexPath(rlKey), {}) as Record<string, StudentRecord>)[uKey]
+
+export const setProgress = (rlKey: string, uKey: string, userId: string, name: string, progress: StudentRecord["progress"]) => {
+  fs.mkdirSync(path.join(dataRoot, rlKey), { recursive: true })
+  const index: Record<string, StudentRecord> = readJson(indexPath(rlKey), {})
+  index[uKey] = { updatedAt: new Date().toISOString(), ...(index[uKey] ?? {}), userId, name, progress }
   fs.writeFileSync(indexPath(rlKey), JSON.stringify(index, null, 2))
 }
 

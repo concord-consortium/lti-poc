@@ -4,7 +4,7 @@ import path from "path"
 import { findResource, CodapTool } from "../catalog/resources"
 import { getUserInfo } from "../helpers"
 import { loadState, saveState, listStudents, saveAttachment, loadAttachment, resourceLinkKey, userKey,
-         loadAssignment, saveAssignment, newAssignmentId, AssignmentRecord } from "./store"
+         loadAssignment, saveAssignment, newAssignmentId, AssignmentRecord, getStudent, setProgress } from "./store"
 
 export const codapUrl = process.env.CODAP_URL || "https://codap3.concord.org/"
 
@@ -117,6 +117,46 @@ export const installRawBodyForCodap = (app: any) => {
   }
 }
 
+// ---- grade passback (Assignment and Grade Services) ----
+// Finds the gradebook line item for this launch: the one the LMS names in the token
+// (graded assignment / "Enable Grading" material), else one bound to this resource link.
+// Returns null when there is none; we do not create columns on the fly.
+const findLineItem = async (lti: any, token: any): Promise<{ id: string, scoreMaximum: number } | null> => {
+  const endpoint = token.platformContext?.endpoint
+  if (!endpoint?.lineitems && !endpoint?.lineitem) return null
+  if (endpoint.lineitem) {
+    try {
+      const item = await lti.Grade.getLineItemById(token, endpoint.lineitem)
+      return { id: endpoint.lineitem, scoreMaximum: item?.scoreMaximum ?? 100 }
+    } catch {
+      return { id: endpoint.lineitem, scoreMaximum: 100 }
+    }
+  }
+  const result = await lti.Grade.getLineItems(token, { resourceLinkId: true })
+  const first = result?.lineItems?.[0]
+  return first ? { id: first.id, scoreMaximum: first.scoreMaximum ?? 100 } : null
+}
+
+// Posts activityProgress for the launching student. Neither message carries a score:
+// "Started" is NotReady; "Completed" is PendingManual, which shows the item in the
+// gradebook as submitted and waiting for the teacher to enter points after looking at
+// the student's document. The tool never invents a grade. Never throws: grading must
+// not break a launch.
+const postProgress = async (lti: any, token: any, progress: "Started" | "Completed"): Promise<{ ok: boolean, detail: string }> => {
+  try {
+    const lineItem = await findLineItem(lti, token)
+    if (!lineItem) return { ok: false, detail: "no gradebook line item for this launch (ungraded item)" }
+    const score: any = { userId: token.user, activityProgress: progress, gradingProgress: progress === "Completed" ? "PendingManual" : "NotReady" }
+    await lti.Grade.submitScore(token, lineItem.id, score)
+    const info = getUserInfo(token)
+    setProgress(resourceLinkKey(token), userKey(token.user), token.user, info.name || info.email || token.user, progress)
+    return { ok: true, detail: `${progress} posted to the gradebook` }
+  } catch (e: any) {
+    console.warn("grade passback failed:", e?.message || e)
+    return { ok: false, detail: e?.message || "grade passback failed" }
+  }
+}
+
 export const addCodapRoutes = (lti: any) => {
   const app = lti.app
 
@@ -156,10 +196,10 @@ export const addCodapRoutes = (lti: any) => {
       }
       const rows = (roster ?? saved.map(s => ({ userId: s.userId, name: s.name }))).map(r => {
         const rec = savedByUser.get(r.userId)
-        return { userId: r.userId, name: r.name, updatedAt: rec?.updatedAt ?? null, started: !!rec }
+        return { userId: r.userId, name: r.name, updatedAt: rec?.updatedAt ?? null, started: !!rec, progress: rec?.progress ?? null }
       })
       // anyone who saved but is no longer on the roster (dropped the course) still shows
-      for (const s of saved) if (!rows.some(r => r.userId === s.userId)) rows.push({ userId: s.userId, name: s.name, updatedAt: s.updatedAt, started: true })
+      for (const s of saved) if (!rows.some(r => r.userId === s.userId)) rows.push({ userId: s.userId, name: s.name, updatedAt: s.updatedAt, started: true, progress: s.progress ?? null })
       rows.sort((a, b) => a.name.localeCompare(b.name))
       return res.send({
         role: "teacher",
@@ -196,6 +236,9 @@ export const addCodapRoutes = (lti: any) => {
       state = await loadSourceDocument(documentUrl)
       firstLaunch = true
     }
+    const existing = getStudent(rlKey, uKey)
+    // tell the gradebook the student has started, once; don't wait for it
+    if (!existing?.progress) postProgress(lti, token, "Started")
     return res.send({
       role: "learner",
       mode: "edit",
@@ -203,6 +246,8 @@ export const addCodapRoutes = (lti: any) => {
       title,
       codapUrl,
       firstLaunch,
+      gradable: !!(token.platformContext?.endpoint?.lineitem || token.platformContext?.endpoint?.lineitems),
+      progress: existing?.progress ?? null,
       state
     })
     } catch (e: any) {
@@ -224,6 +269,17 @@ export const addCodapRoutes = (lti: any) => {
     } catch (e: any) {
       return res.send({ ok: false, error: e?.message || "Could not load that document." })
     }
+  })
+
+  // "Mark as done" from the host page: posts Completed with full points (students only).
+  app.post("/codap/progress", async (req, res) => {
+    const token = res.locals.token
+    if (isTeacher(token)) return res.status(403).send({ error: "Teachers do not have grades" })
+    let body: any = {}
+    try { body = JSON.parse(req.rawBody.toString("utf8")) } catch {}
+    if (body.activityProgress !== "Completed") return res.status(400).send({ error: "activityProgress must be Completed" })
+    const result = await postProgress(lti, token, "Completed")
+    return res.status(result.ok ? 200 : 502).send(result)
   })
 
   // Host page posts CODAP's interactive state here on every autosave (students only).
